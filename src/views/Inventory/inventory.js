@@ -182,14 +182,15 @@ const Inventory = () => {
     }
   }, [currentPage, totalPages])
 
-  // Listener global para lector de código de barras
+// Listener global para lector de código de barras
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
       if (e.key === 'Enter') {
         if (barcodeBuffer.current) {
-          const scannedCode = barcodeBuffer.current.trim();
+          // Normalizamos el código reemplazando las barras '/' por guiones '-'
+          const scannedCode = barcodeBuffer.current.trim().replace(/\//g, '-');
           const foundBag = bags.find(b => b.code_bar === scannedCode);
           
           if (foundBag) {
