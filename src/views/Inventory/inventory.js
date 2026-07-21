@@ -195,8 +195,17 @@ const Inventory = () => {
           
           if (foundBag) {
             setSelectedBag(foundBag);
-            setAddUnitsAmount('');
-            setScanModal(true);
+            
+            // Evaluamos el rol del usuario
+            if (isAdmin) {
+              // Administrador: Mantiene la opción de agregar unidades al inventario
+              setAddUnitsAmount('');
+              setScanModal(true);
+            } else {
+              // Empleado: Solo ve la información y no puede modificar el inventario
+              setViewModal(true);
+              fetchConsignmentDetails(foundBag.bag_id);
+            }
           } else {
             setAlertData({ response: { message: `Código no registrado: ${scannedCode}` }, type: 'warning' });
           }
@@ -215,7 +224,7 @@ const Inventory = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [bags]);
+  }, [bags, isAdmin]); // <-- Importante: Añadir isAdmin al array de dependencias
 
   const generateBarcode = () => {
     return 'BAG-' + Math.floor(Math.random() * 1000000000)
