@@ -226,8 +226,9 @@ const Sales = () => {
     return data.url
   }
 
-  const processBarcodeScan = (scannedCode) => {
-    const trimmedCode = scannedCode?.trim()
+const processBarcodeScan = (scannedCode) => {
+    // Normalizamos el código reemplazando las barras '/' por guiones '-'
+    const trimmedCode = scannedCode?.trim().replace(/\//g, '-')
     if (!trimmedCode) return
 
     const foundBag = bags.find(
