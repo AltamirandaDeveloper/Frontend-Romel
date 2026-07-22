@@ -444,9 +444,10 @@ const Inventory = () => {
 
     const tableColumn = ["Nombre del Producto", "Código de Barras"]
 
+    // 1. Incrustamos el objeto 'bag' completo dentro de la configuración de la celda
     const tableRows = bags.map(bag => [
       bag.model_name,
-      ''
+      { content: '', bagData: bag } // 'content' vacío para no escribir texto, 'bagData' guarda la info
     ])
 
     autoTable(doc, {
@@ -457,10 +458,16 @@ const Inventory = () => {
       bodyStyles: { minCellHeight: 22 },
       didDrawCell: function (data) {
         if (data.column.index === 1 && data.cell.section === 'body') {
-          const bag = bags[data.row.index]
+          
+          // 2. Leemos la data directamente de la fila que autotable está dibujando
+          const currentBag = data.row.raw[1].bagData
+          
+          // 3. Verificamos que el bolso y el código existan para evitar colapsos
+          if (!currentBag || !currentBag.code_bar) return;
+
           const canvas = document.createElement('canvas')
           
-          JsBarcode(canvas, bag.code_bar, {
+          JsBarcode(canvas, currentBag.code_bar, {
             format: "CODE128",
             displayValue: true,
             height: 45,
