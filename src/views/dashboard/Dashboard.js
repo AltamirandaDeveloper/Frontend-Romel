@@ -14,7 +14,7 @@ import {
   CTableDataCell,
   CBadge,
   CButton,
-  CFormSelect
+  CFormSelect,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilMoney, cilLayers, cilCart, cilCloudDownload, cilStar } from '@coreui/icons'
@@ -23,31 +23,64 @@ import AlertMessage from '../../components/ui/AlertMessage'
 const Dashboard = () => {
   const [metrics, setMetrics] = useState({
     totalSalesAmount: 0,
-    totalCashSales: 0,       // NUEVO: Total en efectivo
-    totalTransferSales: 0,   // NUEVO: Total en transferencias
+    totalCashSales: 0, // NUEVO: Total en efectivo
+    totalTransferSales: 0, // NUEVO: Total en transferencias
     activeDeliveriesCount: 0,
     totalWarehouseStock: 0,
     totalConsignedStock: 0,
     totalStoresCount: 0,
     totalMallsCount: 0,
   })
-  
+
   const [allInvoices, setAllInvoices] = useState([]) // Guardamos todas las facturas para poder filtrar por mes
   const [recentInvoices, setRecentInvoices] = useState([])
   const [lowStockBags, setLowStockBags] = useState([])
   const [alertData, setAlertData] = useState(null)
-  
+
   const [bestSellingBag, setBestSellingBag] = useState({ name: 'N/A', qty: 0 })
   const [caStats, setCaStats] = useState({
     breakdown: [],
     totalInvestment: 0,
     totalExpectedProfit: 0,
     totalSold: 0,
-    totalRealizedProfit: 0
+    totalRealizedProfit: 0,
   })
 
-  // Estado para el selector de meses
-  const [selectedMonth, setSelectedMonth] = useState('0')
+  // Estado para el selector de mes y año
+  const [selectedMonth, setSelectedMonth] = useState(String(new Date().getMonth() + 1))
+  const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()))
+
+  const availableYears = Array.from({ length: 6 }, (_, index) =>
+    String(new Date().getFullYear() - index),
+  )
+
+  const getYearMonthFromValue = (dateValue) => {
+    if (!dateValue) return null
+
+    const dateString = String(dateValue)
+    const match = dateString.match(/^(\d{4})-(\d{2})-(\d{2})/)
+    if (match) {
+      return {
+        year: Number(match[1]),
+        month: Number(match[2]),
+      }
+    }
+
+    const parsedDate = new Date(dateValue)
+    if (Number.isNaN(parsedDate.getTime())) return null
+
+    return {
+      year: parsedDate.getFullYear(),
+      month: parsedDate.getMonth() + 1,
+    }
+  }
+
+  const matchesSelectedPeriod = (dateValue) => {
+    const parsedDate = getYearMonthFromValue(dateValue)
+    if (!parsedDate) return false
+
+    return parsedDate.year === Number(selectedYear) && parsedDate.month === Number(selectedMonth)
+  }
 
   const fetchDashboardData = async () => {
     try {
@@ -59,18 +92,22 @@ const Dashboard = () => {
 
       if (invError) throw invError
 
-      setAllInvoices(invoices || []) // Guardar historial completo
-      setRecentInvoices(invoices?.slice(0, 5) || [])
+      const periodInvoices = (invoices || []).filter((inv) =>
+        matchesSelectedPeriod(inv.date_billing),
+      )
+
+      setAllInvoices(periodInvoices)
+      setRecentInvoices(periodInvoices.slice(0, 5) || [])
 
       // NUEVO: Calcular ventas totales, en efectivo y por transferencia
       let totalSales = 0
       let totalCash = 0
       let totalTransfer = 0
 
-      invoices?.forEach(inv => {
+      periodInvoices.forEach((inv) => {
         const amount = Number(inv.amount_total) || 0
         totalSales += amount
-        
+
         // Verificamos si el método de pago es "Cash" o "Efectivo"
         const method = (inv.payment_method || '').toLowerCase()
         if (method === 'cash' || method === 'efectivo') {
@@ -82,25 +119,25 @@ const Dashboard = () => {
       })
 
       // 2. Notas de entrega activas
-      const { count: deliveriesCount, error: delError } = await supabase
-        .from('delivery_notes')
-        .select('*', { count: 'exact', head: true })
-
-      if (delError) throw delError
+      const activeDeliveriesCount = periodInvoices.length
 
       // 3. Inventario de bolsos
-      const { data: bags, error: bagError } = await supabase
-        .from('bags')
-        .select('*')
+      const { data: bags, error: bagError } = await supabase.from('bags').select('*')
 
       if (bagError) throw bagError
 
       // Filtramos solo los activos para el stock general
-      const activeBags = bags?.filter(b => (b.status || '').toLowerCase() === 'active') || []
-      const warehouseStock = activeBags.reduce((acc, curr) => acc + Number(curr.warehouse_stock || 0), 0)
-      const consignedStock = activeBags.reduce((acc, curr) => acc + Number(curr.consigned_stock || 0), 0)
-      
-      const lowStock = activeBags.filter(b => Number(b.warehouse_stock || 0) <= 5) || []
+      const activeBags = bags?.filter((b) => (b.status || '').toLowerCase() === 'active') || []
+      const warehouseStock = activeBags.reduce(
+        (acc, curr) => acc + Number(curr.warehouse_stock || 0),
+        0,
+      )
+      const consignedStock = activeBags.reduce(
+        (acc, curr) => acc + Number(curr.consigned_stock || 0),
+        0,
+      )
+
+      const lowStock = activeBags.filter((b) => Number(b.warehouse_stock || 0) <= 5) || []
       setLowStockBags(lowStock)
 
       // 4. Clientes y Centros Comerciales
@@ -114,9 +151,9 @@ const Dashboard = () => {
 
       setMetrics({
         totalSalesAmount: totalSales,
-        totalCashSales: totalCash,           // Guardar métrica efectivo
-        totalTransferSales: totalTransfer,   // Guardar métrica transferencia
-        activeDeliveriesCount: deliveriesCount || 0,
+        totalCashSales: totalCash, // Guardar métrica efectivo
+        totalTransferSales: totalTransfer, // Guardar métrica transferencia
+        activeDeliveriesCount: activeDeliveriesCount || 0,
         totalWarehouseStock: warehouseStock,
         totalConsignedStock: consignedStock,
         totalStoresCount: storesCount || 0,
@@ -126,20 +163,23 @@ const Dashboard = () => {
       // 5. Calcular ventas generales y mapa de ventas por código
       const { data: deliveryDetails } = await supabase
         .from('delivery_details')
-        .select('sold_quantity, bags(model_name, code_bar)')
-      
+        .select('sold_quantity, delivery_notes(date_delivery), bags(model_name, code_bar)')
+
       let bestBag = { name: 'N/A', qty: 0 }
-      const salesByCode = {} 
+      const salesByCode = {}
 
       if (deliveryDetails) {
         const salesMap = {}
-        deliveryDetails.forEach(d => {
+        deliveryDetails.forEach((d) => {
+          const deliveryDate = d.delivery_notes?.date_delivery
+          if (!matchesSelectedPeriod(deliveryDate)) return
+
           if (d.bags && d.sold_quantity > 0) {
             const mName = d.bags.model_name || 'Desconocido'
             const cBar = d.bags.code_bar || ''
-            
+
             salesMap[mName] = (salesMap[mName] || 0) + Number(d.sold_quantity)
-            
+
             if (cBar) {
               salesByCode[cBar] = (salesByCode[cBar] || 0) + Number(d.sold_quantity)
             }
@@ -154,11 +194,17 @@ const Dashboard = () => {
       setBestSellingBag(bestBag)
 
       // 6. Filtrar y procesar bolsos CA / Carla
-      const caFiltered = bags?.filter(b => {
-        const code = (b.code_bar || '').toLowerCase().trim()
-        const model = (b.model_name || '').toLowerCase().trim()
-        return code.startsWith('ca') || code.includes('carla') || model.startsWith('ca') || model.includes('carla')
-      }) || []
+      const caFiltered =
+        bags?.filter((b) => {
+          const code = (b.code_bar || '').toLowerCase().trim()
+          const model = (b.model_name || '').toLowerCase().trim()
+          return (
+            code.startsWith('ca') ||
+            code.includes('carla') ||
+            model.startsWith('ca') ||
+            model.includes('carla')
+          )
+        }) || []
 
       const caBreakdown = []
       let totalCAInv = 0
@@ -166,17 +212,18 @@ const Dashboard = () => {
       let totalCASold = 0
       let totalCARealizedProfit = 0
 
-      caFiltered.forEach(b => {
-        const tStock = (b.total_stock !== undefined && b.total_stock !== null)
-          ? Number(b.total_stock) 
-          : (Number(b.warehouse_stock || 0) + Number(b.consigned_stock || 0))
-        
+      caFiltered.forEach((b) => {
+        const tStock =
+          b.total_stock !== undefined && b.total_stock !== null
+            ? Number(b.total_stock)
+            : Number(b.warehouse_stock || 0) + Number(b.consigned_stock || 0)
+
         const cost = Number(b.investment_cost) || 0
         const price = Number(b.sale_price) || 0
-        
+
         const investment = cost * tStock
         const expectedProfit = (price - cost) * tStock
-        
+
         const soldQty = salesByCode[b.code_bar] || 0
         const realizedProfit = soldQty * (price - cost)
 
@@ -187,7 +234,7 @@ const Dashboard = () => {
           sold: soldQty,
           investment: investment,
           expectedProfit: expectedProfit,
-          realizedProfit: realizedProfit
+          realizedProfit: realizedProfit,
         })
 
         totalCAInv += investment
@@ -201,9 +248,8 @@ const Dashboard = () => {
         totalInvestment: totalCAInv,
         totalExpectedProfit: totalCAProfit,
         totalSold: totalCASold,
-        totalRealizedProfit: totalCARealizedProfit
+        totalRealizedProfit: totalCARealizedProfit,
       })
-
     } catch (error) {
       setAlertData({ response: { message: error.message }, type: 'danger' })
     }
@@ -211,7 +257,7 @@ const Dashboard = () => {
 
   useEffect(() => {
     fetchDashboardData()
-  }, [])
+  }, [selectedMonth, selectedYear])
 
   // --- Funciones de Descarga CSV Corregidas para Excel ---
   const downloadCSV = (content, fileName) => {
@@ -231,37 +277,44 @@ const Dashboard = () => {
     let exportSales = metrics.totalSalesAmount
     let exportCash = metrics.totalCashSales
     let exportTransfer = metrics.totalTransferSales
-    let fileName = 'Estadisticas_Generales_Historico.csv'
 
-    // Si se seleccionó un mes específico, filtramos y recalculamos ventas por método
-    if (selectedMonth !== '0') {
-      const monthInt = parseInt(selectedMonth)
-      const year = new Date().getFullYear()
+    const monthNames = [
+      '',
+      'Enero',
+      'Febrero',
+      'Marzo',
+      'Abril',
+      'Mayo',
+      'Junio',
+      'Julio',
+      'Agosto',
+      'Septiembre',
+      'Octubre',
+      'Noviembre',
+      'Diciembre',
+    ]
+    const monthInt = parseInt(selectedMonth, 10)
+    const yearInt = parseInt(selectedYear, 10)
+    const fileName = `Estadisticas_${monthNames[monthInt]}_${yearInt}.csv`
 
-      const monthInvoices = allInvoices.filter(inv => {
-        if (!inv.date_billing) return false
-        const invDate = new Date(inv.date_billing)
-        return (invDate.getMonth() + 1) === monthInt && invDate.getFullYear() === year
-      })
+    const periodInvoices = (allInvoices || []).filter((inv) =>
+      matchesSelectedPeriod(inv.date_billing),
+    )
 
-      exportSales = 0
-      exportCash = 0
-      exportTransfer = 0
+    exportSales = 0
+    exportCash = 0
+    exportTransfer = 0
 
-      monthInvoices.forEach(inv => {
-        const amount = Number(inv.amount_total) || 0
-        exportSales += amount
-        const method = (inv.payment_method || '').toLowerCase()
-        if (method === 'cash' || method === 'efectivo') {
-          exportCash += amount
-        } else {
-          exportTransfer += amount
-        }
-      })
-      
-      const monthNames = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-      fileName = `Estadisticas_${monthNames[monthInt]}.csv`
-    }
+    periodInvoices.forEach((inv) => {
+      const amount = Number(inv.amount_total) || 0
+      exportSales += amount
+      const method = (inv.payment_method || '').toLowerCase()
+      if (method === 'cash' || method === 'efectivo') {
+        exportCash += amount
+      } else {
+        exportTransfer += amount
+      }
+    })
 
     const rows = [
       ['Métrica', 'Valor'],
@@ -274,52 +327,106 @@ const Dashboard = () => {
       ['Locales Totales', metrics.totalStoresCount],
       ['Centros Comerciales', metrics.totalMallsCount],
       ['Bolso Más Vendido (Modelo)', bestSellingBag.name],
-      ['Bolso Más Vendido (Cantidad)', bestSellingBag.qty]
+      ['Bolso Más Vendido (Cantidad)', bestSellingBag.qty],
     ]
-    
-    const csvContent = rows.map(r => r.join(';')).join('\n')
+
+    const csvContent = rows.map((r) => r.join(';')).join('\n')
     downloadCSV(csvContent, fileName)
   }
 
   const exportCAStats = () => {
-    const rows = [
-      ['Modelo', 'Codigo de Barras', 'Stock Actual', 'Unidades Vendidas', 'Inversion Actual (COP)', 'Ganancia Proyectada (COP)', 'Ganancia Realizada (COP)']
+    const monthNames = [
+      '',
+      'Enero',
+      'Febrero',
+      'Marzo',
+      'Abril',
+      'Mayo',
+      'Junio',
+      'Julio',
+      'Agosto',
+      'Septiembre',
+      'Octubre',
+      'Noviembre',
+      'Diciembre',
     ]
-    caStats.breakdown.forEach(b => {
-      rows.push([b.model, b.code, b.stock, b.sold, b.investment.toFixed(2), b.expectedProfit.toFixed(2), b.realizedProfit.toFixed(2)])
+    const monthInt = parseInt(selectedMonth, 10)
+    const yearInt = parseInt(selectedYear, 10)
+    const fileName = `Estadisticas_CA_Carla_${monthNames[monthInt]}_${yearInt}.csv`
+
+    const rows = [
+      [
+        'Modelo',
+        'Codigo de Barras',
+        'Stock Actual',
+        'Unidades Vendidas',
+        'Inversion Actual (COP)',
+        'Ganancia Proyectada (COP)',
+        'Ganancia Realizada (COP)',
+      ],
+    ]
+    caStats.breakdown.forEach((b) => {
+      rows.push([
+        b.model,
+        b.code,
+        b.stock,
+        b.sold,
+        b.investment.toFixed(2),
+        b.expectedProfit.toFixed(2),
+        b.realizedProfit.toFixed(2),
+      ])
     })
     rows.push([])
-    rows.push(['TOTALES', '', '', caStats.totalSold, caStats.totalInvestment.toFixed(2), caStats.totalExpectedProfit.toFixed(2), caStats.totalRealizedProfit.toFixed(2)])
-    
-    const csvContent = rows.map(r => r.join(';')).join('\n')
-    downloadCSV(csvContent, 'Estadisticas_CA_Carla.csv')
+    rows.push([
+      'TOTALES',
+      '',
+      '',
+      caStats.totalSold,
+      caStats.totalInvestment.toFixed(2),
+      caStats.totalExpectedProfit.toFixed(2),
+      caStats.totalRealizedProfit.toFixed(2),
+    ])
+
+    const csvContent = rows.map((r) => r.join(';')).join('\n')
+    downloadCSV(csvContent, fileName)
   }
 
   return (
     <div className="p-3">
       <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4 gap-3">
         <h3 className="mb-0">Panel de Estadísticas y Control</h3>
-        
+
         {/* Controles de exportación y selector de mes */}
         <div className="d-flex flex-wrap align-items-center gap-2">
-          <CFormSelect 
-            value={selectedMonth} 
+          <CFormSelect
+            value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
-            style={{ width: 'auto', minWidth: '200px' }}
+            style={{ width: 'auto', minWidth: '180px' }}
           >
-            <option value="0">General (Histórico Completo)</option>
-            <option value="1">Estadísticas - Enero</option>
-            <option value="2">Estadísticas - Febrero</option>
-            <option value="3">Estadísticas - Marzo</option>
-            <option value="4">Estadísticas - Abril</option>
-            <option value="5">Estadísticas - Mayo</option>
-            <option value="6">Estadísticas - Junio</option>
-            <option value="7">Estadísticas - Julio</option>
-            <option value="8">Estadísticas - Agosto</option>
-            <option value="9">Estadísticas - Septiembre</option>
-            <option value="10">Estadísticas - Octubre</option>
-            <option value="11">Estadísticas - Noviembre</option>
-            <option value="12">Estadísticas - Diciembre</option>
+            <option value="1">Enero</option>
+            <option value="2">Febrero</option>
+            <option value="3">Marzo</option>
+            <option value="4">Abril</option>
+            <option value="5">Mayo</option>
+            <option value="6">Junio</option>
+            <option value="7">Julio</option>
+            <option value="8">Agosto</option>
+            <option value="9">Septiembre</option>
+            <option value="10">Octubre</option>
+            <option value="11">Noviembre</option>
+            <option value="12">Diciembre</option>
+          </CFormSelect>
+
+          <CFormSelect
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(e.target.value)}
+            style={{ width: 'auto', minWidth: '120px' }}
+          >
+            {availableYears.map((year) => (
+              <option key={year} value={year}>
+                {year}
+              </option>
+            ))}
           </CFormSelect>
 
           <CButton color="primary" variant="outline" onClick={exportGeneralStats}>
@@ -335,7 +442,6 @@ const Dashboard = () => {
 
       {/* --- TARJETAS DE MÉTRICAS CLAVE (KPIs) --- */}
       <CRow className="mb-4">
-        
         {/* TARJETA MODIFICADA PARA DESGLOSE EFECTIVO/TRANSFERENCIA */}
         <CCol sm={6} lg={3} className="mb-3">
           <CCard className="text-white bg-primary h-100 d-flex flex-column">
@@ -347,7 +453,7 @@ const Dashboard = () => {
                 </div>
                 <CIcon icon={cilMoney} height={36} />
               </div>
-              
+
               {/* Desglose en la parte inferior de la tarjeta */}
               <div className="d-flex justify-content-between text-sm mt-3 pt-3 border-top border-light border-opacity-50">
                 <div>
@@ -379,7 +485,9 @@ const Dashboard = () => {
           <CCard className="text-white bg-info h-100">
             <CCardBody className="d-flex justify-content-between align-items-center">
               <div>
-                <div className="text-value-lg">{metrics.totalWarehouseStock} / {metrics.totalConsignedStock}</div>
+                <div className="text-value-lg">
+                  {metrics.totalWarehouseStock} / {metrics.totalConsignedStock}
+                </div>
                 <div>Stock Almacén / Pendiente</div>
               </div>
               <CIcon icon={cilCart} height={36} />
@@ -419,7 +527,9 @@ const Dashboard = () => {
                 <CCol sm={6} lg={3} className="mb-2">
                   <div className="border rounded p-3 bg-light text-center h-100">
                     <h6 className="text-muted mb-1">Ganancia Proyectada</h6>
-                    <h4 className="mb-0 text-success">COP {caStats.totalExpectedProfit.toFixed(2)}</h4>
+                    <h4 className="mb-0 text-success">
+                      COP {caStats.totalExpectedProfit.toFixed(2)}
+                    </h4>
                   </div>
                 </CCol>
                 <CCol sm={6} lg={3} className="mb-2">
@@ -449,19 +559,31 @@ const Dashboard = () => {
                 </CTableHead>
                 <CTableBody>
                   {caStats.breakdown.length === 0 ? (
-                    <CTableRow>
-                      <CTableDataCell colSpan={7} className="text-center text-muted py-3">No hay registros de esta línea.</CTableDataCell>
+                    <CTableRow key="ca-empty-row">
+                      <CTableDataCell colSpan={7} className="text-center text-muted py-3">
+                        No hay registros de esta línea.
+                      </CTableDataCell>
                     </CTableRow>
                   ) : (
                     caStats.breakdown.map((item, idx) => (
-                      <CTableRow key={idx}>
+                      <CTableRow key={`${item.code || 'item'}-${idx}`}>
                         <CTableDataCell className="fw-semibold">{item.model}</CTableDataCell>
-                        <CTableDataCell><CBadge color="secondary">{item.code}</CBadge></CTableDataCell>
+                        <CTableDataCell>
+                          <CBadge color="secondary">{item.code}</CBadge>
+                        </CTableDataCell>
                         <CTableDataCell className="text-center">{item.stock}</CTableDataCell>
-                        <CTableDataCell className="text-center fw-bold text-primary">{item.sold}</CTableDataCell>
-                        <CTableDataCell className="text-end text-danger">COP {item.investment.toFixed(2)}</CTableDataCell>
-                        <CTableDataCell className="text-end text-success">COP {item.expectedProfit.toFixed(2)}</CTableDataCell>
-                        <CTableDataCell className="text-end text-info fw-bold">COP {item.realizedProfit.toFixed(2)}</CTableDataCell>
+                        <CTableDataCell className="text-center fw-bold text-primary">
+                          {item.sold}
+                        </CTableDataCell>
+                        <CTableDataCell className="text-end text-danger">
+                          COP {item.investment.toFixed(2)}
+                        </CTableDataCell>
+                        <CTableDataCell className="text-end text-success">
+                          COP {item.expectedProfit.toFixed(2)}
+                        </CTableDataCell>
+                        <CTableDataCell className="text-end text-info fw-bold">
+                          COP {item.realizedProfit.toFixed(2)}
+                        </CTableDataCell>
                       </CTableRow>
                     ))
                   )}
@@ -488,21 +610,27 @@ const Dashboard = () => {
                   </CTableRow>
                 </CTableHead>
                 <CTableBody>
-                  {recentInvoices.map((inv) => (
-                    <CTableRow key={inv.invoice_id}>
+                  {recentInvoices.map((inv, idx) => (
+                    <CTableRow key={inv.invoice_id ? `${inv.invoice_id}-${idx}` : idx}>
                       <CTableDataCell>#{inv.invoice_id}</CTableDataCell>
-                      <CTableDataCell>{new Date(inv.date_billing).toLocaleDateString()}</CTableDataCell>
+                      <CTableDataCell>
+                        {new Date(inv.date_billing).toLocaleDateString()}
+                      </CTableDataCell>
                       <CTableDataCell>
                         <CBadge color={inv.payment_method === 'Cash' ? 'success' : 'info'}>
                           {inv.payment_method}
                         </CBadge>
                       </CTableDataCell>
-                      <CTableDataCell className="fw-semibold">COP {Number(inv.amount_total).toFixed(2)}</CTableDataCell>
+                      <CTableDataCell className="fw-semibold">
+                        COP {Number(inv.amount_total).toFixed(2)}
+                      </CTableDataCell>
                     </CTableRow>
                   ))}
                   {recentInvoices.length === 0 && (
-                    <CTableRow>
-                      <CTableDataCell colSpan={4} className="text-center text-muted">No hay facturas recientes</CTableDataCell>
+                    <CTableRow key="recent-invoices-empty-row">
+                      <CTableDataCell colSpan={4} className="text-center text-muted">
+                        No hay facturas recientes
+                      </CTableDataCell>
                     </CTableRow>
                   )}
                 </CTableBody>
@@ -513,7 +641,9 @@ const Dashboard = () => {
 
         <CCol md={6} className="mb-4">
           <CCard className="h-100 shadow-sm border-0">
-            <CCardHeader className="text-danger fw-semibold bg-light">Alertas: Stock Bajo en Almacén (≤ 5)</CCardHeader>
+            <CCardHeader className="text-danger fw-semibold bg-light">
+              Alertas: Stock Bajo en Almacén (≤ 5)
+            </CCardHeader>
             <CCardBody>
               <CTable hover responsive align="middle" className="mb-0">
                 <CTableHead>
@@ -524,18 +654,22 @@ const Dashboard = () => {
                   </CTableRow>
                 </CTableHead>
                 <CTableBody>
-                  {lowStockBags.map((bag) => (
-                    <CTableRow key={bag.bag_id}>
+                  {lowStockBags.map((bag, idx) => (
+                    <CTableRow key={bag.bag_id ? `${bag.bag_id}-${idx}` : idx}>
                       <CTableDataCell>{bag.model_name}</CTableDataCell>
                       <CTableDataCell>
-                        <CBadge color="danger" shape="rounded-pill">{bag.warehouse_stock}</CBadge>
+                        <CBadge color="danger" shape="rounded-pill">
+                          {bag.warehouse_stock}
+                        </CBadge>
                       </CTableDataCell>
                       <CTableDataCell>{bag.consigned_stock}</CTableDataCell>
                     </CTableRow>
                   ))}
                   {lowStockBags.length === 0 && (
-                    <CTableRow>
-                      <CTableDataCell colSpan={3} className="text-center text-muted">No hay productos con stock bajo</CTableDataCell>
+                    <CTableRow key="low-stock-empty-row">
+                      <CTableDataCell colSpan={3} className="text-center text-muted">
+                        No hay productos con stock bajo
+                      </CTableDataCell>
                     </CTableRow>
                   )}
                 </CTableBody>
