@@ -25,6 +25,8 @@ import {
   CFormSelect,
   CFormTextarea,
   CBadge,
+  CListGroup,
+  CListGroupItem,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import {
@@ -87,8 +89,8 @@ const Sales = () => {
   
   // ESTADOS DE PAGO
   const [paymentMethod, setPaymentMethod] = useState('Cash')
-  const [amountCash, setAmountCash] = useState('')       // NUEVO: Monto en efectivo (para pago mixto)
-  const [amountTransfer, setAmountTransfer] = useState('') // NUEVO: Monto en transferencia (para pago mixto)
+  const [amountCash, setAmountCash] = useState('')
+  const [amountTransfer, setAmountTransfer] = useState('')
   const [paymentDate, setPaymentDate] = useState(() => getLocalDateTimeValue())
   const [paymentNotes, setPaymentNotes] = useState('')
   const [receiptFile, setReceiptFile] = useState(null)
@@ -97,8 +99,9 @@ const Sales = () => {
   const [isUploading, setIsUploading] = useState(false)
 
   // Formulario nueva Nota de Entrega
-  const [newDeliveryMall, setNewDeliveryMall] = useState('')
   const [newDeliveryStore, setNewDeliveryStore] = useState('')
+  const [searchClientCode, setSearchClientCode] = useState('')
+  const [foundStore, setFoundStore] = useState(null)
   const [deliveryItems, setDeliveryItems] = useState([])
 
   // Formulario nuevo Gasto (`expenses`)
@@ -112,7 +115,7 @@ const Sales = () => {
       case 'Bank_Transfer':
         return 'Transferencia Bancaria'
       case 'mix':
-        return 'Mixto (Efectivo y Transferencia)' // NUEVO
+        return 'Mixto (Efectivo y Transferencia)'
       case 'Cash':
       default:
         return 'Efectivo'
@@ -121,16 +124,13 @@ const Sales = () => {
 
   // APLICACIÓN DEL FILTRO DE PENDIENTES Y FECHA
   const filteredDeliveries = deliveries.filter((del) => {
-    // 1. Filtro de pendientes
     const matchesPending = filterPending 
       ? (!del.invoices || del.invoices.length === 0) 
       : true;
 
-    // 2. Filtro por fecha (formato YYYY-MM-DD)
     let matchesDate = true;
     if (filterDate && del.date_delivery) {
       const d = new Date(del.date_delivery);
-      // Convertimos la fecha de la base de datos al formato local YYYY-MM-DD
       const year = d.getFullYear();
       const month = String(d.getMonth() + 1).padStart(2, '0');
       const day = String(d.getDate()).padStart(2, '0');
@@ -227,7 +227,6 @@ const Sales = () => {
   }
 
 const processBarcodeScan = (scannedCode) => {
-    // Normalizamos el código reemplazando las barras '/' por guiones '-'
     const trimmedCode = scannedCode?.trim().replace(/\//g, '-')
     if (!trimmedCode) return
 
@@ -317,7 +316,7 @@ const processBarcodeScan = (scannedCode) => {
   const handleCreateDeliveryNote = async () => {
     if (!newDeliveryStore) {
       setAlertData({
-        response: { message: 'Debe seleccionar un local registrado' },
+        response: { message: 'Debe seleccionar un cliente registrado' },
         type: 'warning',
       })
       return
@@ -398,8 +397,9 @@ const processBarcodeScan = (scannedCode) => {
       }
 
       setAddDeliveryModal(false)
-      setNewDeliveryMall('')
+      setSearchClientCode('')
       setNewDeliveryStore('')
+      setFoundStore(null)
       setDeliveryItems([])
       fetchDeliveries()
       fetchBags()
@@ -446,7 +446,6 @@ const processBarcodeScan = (scannedCode) => {
     setSettlementData(initialSettlement)
     setPaymentMethod('Cash')
     
-    // Limpiamos montos previos
     setAmountCash('')
     setAmountTransfer('')
     
@@ -463,7 +462,6 @@ const processBarcodeScan = (scannedCode) => {
     })
   }
 
-  // --- CÁLCULO EN TIEMPO REAL PARA EL MODAL DE LIQUIDACIÓN ---
   const calculatedTotal = deliveryDetails.reduce((sum, det) => {
     const sold = Number(settlementData[det.detail_id]?.sold) || 0
     return sum + (sold * Number(det.bags?.sale_price || 0))
@@ -481,7 +479,6 @@ const processBarcodeScan = (scannedCode) => {
       return
     }
 
-    // 1. CALCULAMOS EL MONTO TOTAL Y VALIDAMOS CANTIDADES PRIMERO
     let amountTotal = 0
     for (const [detailId, info] of Object.entries(settlementData)) {
       const sold = Number(info.sold) || 0
@@ -495,12 +492,10 @@ const processBarcodeScan = (scannedCode) => {
         })
         return
       }
-      // Sumamos al total usando el precio del detalle correspondiente
       const det = deliveryDetails.find((d) => d.detail_id === Number(detailId))
       amountTotal += sold * Number(det.bags.sale_price)
     }
 
-    // 2. VALIDAMOS QUE LOS MONTOS DE PAGO MIXTO CUADREN EXACTAMENTE
     if (paymentMethod === 'mix') {
       const cashVal = Number(amountCash) || 0
       const transVal = Number(amountTransfer) || 0
@@ -515,7 +510,6 @@ const processBarcodeScan = (scannedCode) => {
       }
     }
 
-    // 3. VALIDAMOS QUE EXISTA RECIBO SI HAY TRANSFERENCIA DE POR MEDIO Y EL MONTO ES MAYOR A 0
     if ((paymentMethod === 'Bank_Transfer' || paymentMethod === 'mix') && !receiptFile && amountTotal > 0) {
       setAlertData({
         response: { message: 'Debe subir el comprobante de pago de la transferencia' },
@@ -543,7 +537,6 @@ const processBarcodeScan = (scannedCode) => {
       const isReturned = amountTotal === 0
       const finalPaymentStatus = isReturned ? 'returned' : 'paid'
 
-      // Preparamos los montos divididos según la elección
       let finalAmountCash = 0
       let finalAmountTransfer = 0
 
@@ -561,8 +554,8 @@ const processBarcodeScan = (scannedCode) => {
         id_user: internalUserId,
         date_billing: getLocalDateTimeValue(),
         amount_total: amountTotal,
-        amount_cash: finalAmountCash,          // NUEVO
-        amount_transfer: finalAmountTransfer,  // NUEVO
+        amount_cash: finalAmountCash,
+        amount_transfer: finalAmountTransfer,
         payment_method: paymentMethod,
         payment_receipt_url: receiptUrl,
         payment_status: finalPaymentStatus,
@@ -579,7 +572,6 @@ const processBarcodeScan = (scannedCode) => {
         .single()
 
       if (invoiceError) {
-        // Fallback en caso de que las columnas opcionales arrojen error (protección extra)
         const fallbackPayload = { ...invoicePayload }
         delete fallbackPayload.payment_status
         delete fallbackPayload.payment_date
@@ -670,27 +662,31 @@ const processBarcodeScan = (scannedCode) => {
     }
   }
 
-  // GENERAR PDF DE REPORTE (DIARIO/SEMANAL DESGLOSADO)
-  const downloadReportPDF = () => {
+  // --- NUEVA LÓGICA DE REPORTE POR TIPO (DIARIO O SEMANAL) ---
+  const downloadReportPDF = (reportType) => {
     const doc = new jsPDF()
     const now = new Date()
-    const isSaturday = now.getDay() === 6
     const startDate = new Date(now)
 
-    if (isSaturday) {
-      // Si es sábado, obtenemos la ventana de los últimos 6 días (+ hoy = 7 días)
-      startDate.setDate(now.getDate() - 6)
+    if (reportType === 'weekly') {
+      // Obtener el día de la semana (0 = Domingo, 1 = Lunes, ..., 6 = Sábado)
+      const dayOfWeek = now.getDay()
+      // Calcular cuántos días restar para llegar al lunes de esta semana
+      const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+      startDate.setDate(now.getDate() - diffToMonday)
     }
+    
+    // Fijamos la hora de inicio a las 00:00 del día calculado
     startDate.setHours(0, 0, 0, 0)
 
     // 1. Inicializar objeto para agrupar por días
     const dailyData = {}
     for (let d = new Date(startDate); d <= now; d.setDate(d.getDate() + 1)) {
       const dateStr = d.toLocaleDateString()
-      dailyData[dateStr] = { paid: 0, pending: 0, returned: 0, totalSales: 0 }
+      dailyData[dateStr] = { paid: 0, pending: 0, returned: 0, totalSales: 0, totalExpenses: 0 }
     }
 
-    // 2. Procesar las notas de entrega y mapearlas a sus respectivos días
+    // 2. Procesar las notas de entrega
     deliveries.forEach((del) => {
       const delDate = new Date(del.date_delivery)
       if (delDate >= startDate && delDate <= now) {
@@ -712,34 +708,56 @@ const processBarcodeScan = (scannedCode) => {
       }
     })
 
-    // 3. Formatear datos para autoTable de jsPDF
-    const tableColumn = ['Fecha', 'Entregas Pagadas', 'Pendientes', 'Devueltas', 'Ingresos (COP)']
+    // 3. Procesar los gastos
+    expenses.forEach((exp) => {
+      const expDate = new Date(exp.expense_date)
+      if (expDate >= startDate && expDate <= now) {
+        const dateStr = expDate.toLocaleDateString()
+        if (dailyData[dateStr]) {
+          dailyData[dateStr].totalExpenses += Number(exp.amount) || 0
+        }
+      }
+    })
+
+    // 4. Formatear datos para autoTable de jsPDF
+    const tableColumn = ['Fecha', 'Pagadas', 'Pendientes', 'Devueltas', 'Ingresos', 'Gastos', 'Total Neto']
     const tableRows = []
-    let grandTotal = 0
+    
+    let grandTotalSales = 0
+    let grandTotalExpenses = 0
+    let grandNetTotal = 0
     let totalPending = 0
     let totalPaid = 0
     let totalReturned = 0
 
     Object.keys(dailyData).forEach((date) => {
       const day = dailyData[date]
+      const netBalance = day.totalSales - day.totalExpenses
+
       const rowData = [
         date,
         day.paid.toString(),
         day.pending.toString(),
         day.returned.toString(),
         `$${day.totalSales.toFixed(2)}`,
+        `$${day.totalExpenses.toFixed(2)}`,
+        `$${netBalance.toFixed(2)}`
       ]
       tableRows.push(rowData)
 
-      grandTotal += day.totalSales
+      grandTotalSales += day.totalSales
+      grandTotalExpenses += day.totalExpenses
+      grandNetTotal += netBalance
+      
       totalPaid += day.paid
       totalPending += day.pending
       totalReturned += day.returned
     })
 
-    // 4. Dibujar el Documento PDF
+    // 5. Dibujar el Documento PDF
     doc.setFontSize(18)
-    doc.text(`Reporte ${isSaturday ? 'Semanal' : 'Diario'} de Ventas`, 14, 22)
+    const pdfTitle = reportType === 'weekly' ? 'Reporte Semanal (Lun - Hoy)' : 'Reporte Diario'
+    doc.text(`${pdfTitle} de Ventas y Gastos`, 14, 22)
 
     doc.setFontSize(11)
     doc.setTextColor(100)
@@ -763,14 +781,17 @@ const processBarcodeScan = (scannedCode) => {
           totalPaid.toString(),
           totalPending.toString(),
           totalReturned.toString(),
-          `$${grandTotal.toFixed(2)}`,
+          `$${grandTotalSales.toFixed(2)}`,
+          `$${grandTotalExpenses.toFixed(2)}`,
+          `$${grandNetTotal.toFixed(2)}`,
         ],
       ],
       footStyles: { fillColor: [52, 73, 94], textColor: 255, fontStyle: 'bold' },
     })
 
     // Descargar Archivo
-    doc.save(`Reporte_${isSaturday ? 'Semanal' : 'Diario'}_Ventas.pdf`)
+    const fileName = reportType === 'weekly' ? 'Reporte_Semanal_Ventas.pdf' : 'Reporte_Diario_Ventas.pdf'
+    doc.save(fileName)
   }
 
   return (
@@ -790,7 +811,6 @@ const processBarcodeScan = (scannedCode) => {
             <div className="d-flex justify-content-between mb-3 flex-wrap gap-2">
               <div className="d-flex gap-2 align-items-center flex-wrap">
                 
-                {/* --- INPUT DE FECHA CON LÍMITE HASTA HOY --- */}
                 <CFormInput
                   type="date"
                   value={filterDate}
@@ -804,7 +824,6 @@ const processBarcodeScan = (scannedCode) => {
                     Limpiar
                   </CButton>
                 )}
-                {/* ----------------------------- */}
 
                 <CButton
                   color={filterPending ? 'secondary' : 'light'}
@@ -814,10 +833,17 @@ const processBarcodeScan = (scannedCode) => {
                   <CIcon icon={cilFilter} className="me-1" />
                   {filterPending ? 'Mostrando Pendientes' : 'Filtrar Pendientes'}
                 </CButton>
-                <CButton color="info" className="text-white shadow-sm text-nowrap" onClick={downloadReportPDF}>
+
+                {/* --- NUEVOS BOTONES DE DESCARGA DE REPORTES --- */}
+                <CButton color="info" className="text-white shadow-sm text-nowrap" onClick={() => downloadReportPDF('daily')}>
                   <CIcon icon={cilCloudDownload} className="me-1" />
-                  Descargar Reporte {new Date().getDay() === 6 ? 'Semanal' : 'Diario'}
+                  Reporte Diario
                 </CButton>
+                <CButton color="success" className="text-white shadow-sm text-nowrap" onClick={() => downloadReportPDF('weekly')}>
+                  <CIcon icon={cilCloudDownload} className="me-1" />
+                  Reporte Semanal
+                </CButton>
+                {/* ---------------------------------------------- */}
               </div>
               <CButton
                 color="primary"
@@ -1033,45 +1059,69 @@ const processBarcodeScan = (scannedCode) => {
       </CTabs>
 
       {/* --- MODAL CREAR NOTA DE ENTREGA --- */}
-      <CModal visible={addDeliveryModal} onClose={() => setAddDeliveryModal(false)} size="lg">
-        <CModalHeader onClose={() => setAddDeliveryModal(false)}>
+      <CModal visible={addDeliveryModal} onClose={() => {
+        setAddDeliveryModal(false)
+        setSearchClientCode('')
+        setNewDeliveryStore('')
+        setFoundStore(null)
+        setDeliveryItems([])
+      }} size="lg">
+        <CModalHeader onClose={() => {
+          setAddDeliveryModal(false)
+          setSearchClientCode('')
+          setNewDeliveryStore('')
+          setFoundStore(null)
+          setDeliveryItems([])
+        }}>
           <CModalTitle>Crear Nota de Entrega (Consignación)</CModalTitle>
         </CModalHeader>
         <CModalBody>
           <CForm>
-            <CFormSelect
-              label="Centro Comercial"
-              value={newDeliveryMall}
-              onChange={(e) => {
-                setNewDeliveryMall(e.target.value)
-                setNewDeliveryStore('')
-              }}
-              className="mb-3"
-            >
-              <option value="">Seleccione el Centro Comercial</option>
-              {malls.map((m) => (
-                <option key={m.id_mall} value={m.id_mall}>
-                  {m.name}
-                </option>
-              ))}
-            </CFormSelect>
+            
+            <div className="mb-4 position-relative">
+              <CFormInput
+                type="text"
+                label="Código de Cliente"
+                placeholder="Ej: Barinas-36"
+                value={searchClientCode}
+                onChange={(e) => {
+                  setSearchClientCode(e.target.value)
+                  setNewDeliveryStore('') 
+                  setFoundStore(null)
+                }}
+              />
+              
+              {searchClientCode && !newDeliveryStore && (
+                <CListGroup className="position-absolute w-100 shadow-sm" style={{ zIndex: 1000, maxHeight: '200px', overflowY: 'auto' }}>
+                  {stores
+                    .filter((st) => st.code_customer?.toLowerCase().includes(searchClientCode.toLowerCase()))
+                    .map((st) => (
+                      <CListGroupItem
+                        component="button"
+                        type="button"
+                        key={st.id_store}
+                        onClick={() => {
+                          setSearchClientCode(st.code_customer)
+                          setNewDeliveryStore(st.id_store)
+                          setFoundStore(st)
+                        }}
+                      >
+                        <strong>{st.code_customer}</strong> - Local {st.number_store}
+                      </CListGroupItem>
+                    ))}
+                  {stores.filter((st) => st.code_customer?.toLowerCase().includes(searchClientCode.toLowerCase())).length === 0 && (
+                    <CListGroupItem>No se encontraron clientes con ese código</CListGroupItem>
+                  )}
+                </CListGroup>
+              )}
 
-            <CFormSelect
-              label="Local Destino (Registrado)"
-              value={newDeliveryStore}
-              onChange={(e) => setNewDeliveryStore(e.target.value)}
-              className="mb-3"
-              disabled={!newDeliveryMall}
-            >
-              <option value="">Seleccione el Local</option>
-              {stores
-                .filter((st) => st.id_mall === Number(newDeliveryMall))
-                .map((st) => (
-                  <option key={st.id_store} value={st.id_store}>
-                    {st.code_customer} - Local {st.number_store}
-                  </option>
-                ))}
-            </CFormSelect>
+              {newDeliveryStore && foundStore && (
+                <div className="text-success mt-1 small">
+                  <CIcon icon={cilCheckCircle} className="me-1" />
+                  Cliente seleccionado: {foundStore.code_customer} (Local {foundStore.number_store})
+                </div>
+              )}
+            </div>
 
             <div className="mb-4 p-3 bg-light border rounded">
               <CFormInput
@@ -1083,7 +1133,6 @@ const processBarcodeScan = (scannedCode) => {
                   setBarcodeInput(e.target.value)
                   barcodeBufferRef.current = e.target.value
                 }}
-                autoFocus
               />
               <small className="text-muted">
                 El artículo se agregará automáticamente al escanear.
@@ -1130,7 +1179,13 @@ const processBarcodeScan = (scannedCode) => {
           <CButton color="primary" onClick={handleCreateDeliveryNote} disabled={isUploading}>
             {isUploading ? 'Procesando...' : 'Guardar Pedido'}
           </CButton>
-          <CButton color="secondary" onClick={() => setAddDeliveryModal(false)}>
+          <CButton color="secondary" onClick={() => {
+            setAddDeliveryModal(false)
+            setSearchClientCode('')
+            setNewDeliveryStore('')
+            setFoundStore(null)
+            setDeliveryItems([])
+          }}>
             Cancelar
           </CButton>
         </CModalFooter>
@@ -1177,7 +1232,6 @@ const processBarcodeScan = (scannedCode) => {
                       <div className="small text-muted mt-1">
                         <div>Total: ${invoice.amount_total}</div>
                         
-                        {/* Mostrar desglose si es mix */}
                         {(Number(invoice.amount_cash) > 0 || Number(invoice.amount_transfer) > 0) ? (
                           <>
                             {Number(invoice.amount_cash) > 0 && <div>Efectivo: ${invoice.amount_cash}</div>}
@@ -1256,7 +1310,6 @@ const processBarcodeScan = (scannedCode) => {
                     </CTableBody>
                   </CTable>
 
-                  {/* INDICADOR VISUAL DEL TOTAL CALCULADO */}
                   <div className="mb-3 p-3 bg-light border border-info rounded text-info fw-bold text-center">
                     Total calculado a cobrar: ${calculatedTotal.toFixed(2)}
                   </div>
@@ -1272,7 +1325,6 @@ const processBarcodeScan = (scannedCode) => {
                     <option value="mix">Mixto (Efectivo y Transferencia)</option>
                   </CFormSelect>
 
-                  {/* NUEVOS CAMPOS SI SELECCIONA mix */}
                   {paymentMethod === 'mix' && (
                     <div className="d-flex gap-2 mb-3">
                       <CFormInput
@@ -1309,7 +1361,6 @@ const processBarcodeScan = (scannedCode) => {
                     className="mb-3"
                   />
 
-                  {/* EXIGIMOS IMAGEN SI HAY TRANSFERENCIA DE POR MEDIO */}
                   {(paymentMethod === 'Bank_Transfer' || paymentMethod === 'mix') && (
                     <CFormInput
                       type="file"
