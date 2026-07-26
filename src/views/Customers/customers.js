@@ -17,7 +17,6 @@ import {
   CModalFooter,
   CForm,
   CFormInput,
-  CFormSelect,
   CBadge,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
@@ -25,14 +24,11 @@ import { cilPencil, cilTrash, cilInfo, cilPlus, cilFolderOpen } from '@coreui/ic
 import AlertMessage from '../../components/ui/AlertMessage'
 import * as XLSX from 'xlsx'
 import { saveAs } from 'file-saver'
-import { createMallSchema } from '../../schemas/malls.schema'
 import { createCustomerSchema, updateCustomerSchema } from '../../schemas/customers.schema'
 
 const Customers = () => {
   const [stores, setStores] = useState([])
-  const [malls, setMalls] = useState([])
   const [selectedStore, setSelectedStore] = useState(null)
-  const [mallModal, setMallModal] = useState(false)
   
   // Modales
   const [viewModal, setViewModal] = useState(false)
@@ -45,39 +41,32 @@ const Customers = () => {
   const [alertData, setAlertData] = useState(null)
 
   const initialStoreState = {
-    id_mall: '',
     number_store: '',
     number_customer: '',
     phone: '',
     code_customer: '',
   }
 
-  const initialMallState = {
-    name: '',
-    address: '',
-  }
-
   const [newStore, setNewStore] = useState(initialStoreState)
-  const [newMall, setNewMall] = useState(initialMallState)
   const [formErrors, setFormErrors] = useState({})
-  const [mallFormErrors, setMallFormErrors] = useState({})
-  const [selectedMallFilter, setSelectedMallFilter] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Auto-cerrar alertas después de 4 segundos
+  useEffect(() => {
+    if (alertData) {
+      const timer = setTimeout(() => {
+        setAlertData(null)
+      }, 4000)
+      return () => clearTimeout(timer)
+    }
+  }, [alertData])
 
   const handleInputChange = (e) => {
     const { name, value } = e.target
     setNewStore({ ...newStore, [name]: value })
     if (formErrors[name]) {
       setFormErrors({ ...formErrors, [name]: '' })
-    }
-  }
-
-  const handleMallInputChange = (e) => {
-    const { name, value } = e.target
-    setNewMall({ ...newMall, [name]: value })
-    if (mallFormErrors[name]) {
-      setMallFormErrors({ ...mallFormErrors, [name]: '' })
     }
   }
 
@@ -97,11 +86,11 @@ const Customers = () => {
     }
   }
 
-  // Cargar Tiendas (Stores) cruzando con Centros Comerciales (Malls)
+  // Cargar Tiendas (Stores)
   const fetchStores = async () => {
     const { data, error } = await supabase
       .from('stores')
-      .select('*, malls(name, address)')
+      .select('*')
       .order('id_store', { ascending: false })
 
     if (error) {
@@ -111,30 +100,25 @@ const Customers = () => {
     }
   }
 
-  // Cargar Centros Comerciales para el select del formulario
-  const fetchMalls = async () => {
-    const { data, error } = await supabase.from('malls').select('*')
-    if (!error && data) {
-      setMalls(data)
-    } else {
-      setAlertData({ response: { message: 'Error cargando centros comerciales: ' + error.message }, type: 'danger' })
+  useEffect(() => {
+    fetchStores()
+  }, [])
+
+  // Función para convertir strings vacíos a null antes de enviar a DB
+  const formatPayload = (data) => {
+    return {
+      code_customer: data.code_customer?.trim() || null,
+      number_store: data.number_store?.trim() || null,
+      number_customer: data.number_customer?.trim() || null,
+      phone: data.phone?.trim() || null,
     }
   }
 
-  useEffect(() => {
-    fetchStores()
-    fetchMalls()
-  }, [])
-
   // Crear Cliente (Tienda)
   const handleAddStore = async () => {
-    // const validationErrors = getValidationErrors(createStoreSchema, newStore)
-    // if (Object.keys(validationErrors).length > 0) {
-    //   setFormErrors(validationErrors)
-    //   return
-    // }
-
-    const validationErrors = getValidationErrors(createCustomerSchema, newStore)
+    const payload = formatPayload(newStore)
+    
+    const validationErrors = getValidationErrors(createCustomerSchema, payload)
     if (Object.keys(validationErrors).length > 0) {
       setFormErrors(validationErrors)
       return
@@ -143,11 +127,6 @@ const Customers = () => {
     setIsSubmitting(true)
 
     try {
-      const payload = {
-        ...newStore,
-        id_mall: newStore.id_mall ? Number(newStore.id_mall) : null,
-      }
-
       const { error } = await supabase.from('stores').insert([payload])
 
       if (error) throw error
@@ -166,22 +145,14 @@ const Customers = () => {
 
   // Editar Cliente (Tienda)
   const handleEdit = (store) => {
-    setStoreToEdit({
-      ...store,
-      // Aseguramos que el mall se asigne correctamente al select
-      id_mall: store.id_mall || '' 
-    })
+    setStoreToEdit({ ...store })
     setEditModal(true)
   }
 
   const handleSaveEdit = async () => {
-    // const validationErrors = getValidationErrors(updateStoreSchema, storeToEdit)
-    // if (Object.keys(validationErrors).length > 0) {
-    //   setFormErrors(validationErrors)
-    //   return
-    // }
+    const payload = formatPayload(storeToEdit)
 
-    const validationErrors = getValidationErrors(updateCustomerSchema, storeToEdit)
+    const validationErrors = getValidationErrors(updateCustomerSchema, payload)
     if (Object.keys(validationErrors).length > 0) {
       setFormErrors(validationErrors)
       return
@@ -190,14 +161,6 @@ const Customers = () => {
     setIsSubmitting(true)
 
     try {
-      const payload = {
-        number_store: storeToEdit.number_store,
-        number_customer: storeToEdit.number_customer,
-        phone: storeToEdit.phone,
-        code_customer: storeToEdit.code_customer,
-        id_mall: storeToEdit.id_mall ? Number(storeToEdit.id_mall) : null,
-      }
-
       const { error } = await supabase
         .from('stores')
         .update(payload)
@@ -217,7 +180,7 @@ const Customers = () => {
     }
   }
 
-  // Eliminar Cliente (Hard Delete en este caso, ya que no hay enum status en DBML para stores)
+  // Eliminar Cliente 
   const handleDelete = (store) => {
     setStoreToDelete(store)
     setDeleteModal(true)
@@ -236,7 +199,7 @@ const Customers = () => {
       setStores(stores.filter((store) => store.id_store !== storeToDelete.id_store))
       setDeleteModal(false)
       setStoreToDelete(null)
-      setAlertData({ response: { message: 'Cliente eliminado del sistema' }, type: 'success' })
+      setAlertData({ response: { message: 'Cliente eliminado correctamente' }, type: 'success' })
     } catch (error) {
       setAlertData({ response: { message: error.message }, type: 'danger' })
     }
@@ -250,41 +213,15 @@ const Customers = () => {
   const getFilteredStores = () => {
     const query = searchQuery.trim().toLowerCase()
     return stores.filter((store) => {
-      const matchesMall = selectedMallFilter ? String(store.id_mall) === String(selectedMallFilter) : true
-      const matchesSearch = query
+      return query
         ? [store.code_customer, store.number_store]
             .filter(Boolean)
             .some((value) => String(value).toLowerCase().includes(query))
         : true
-      return matchesMall && matchesSearch
     })
   }
 
   const filteredStores = getFilteredStores()
-
-  const handleAddMall = async () => {
-    const validationErrors = getValidationErrors(createMallSchema, newMall)
-    if (Object.keys(validationErrors).length > 0) {
-      setMallFormErrors(validationErrors)
-      return
-    }
-
-    setIsSubmitting(true)
-    try {
-      const { error } = await supabase.from('malls').insert([newMall])
-      if (error) throw error
-
-      setNewMall(initialMallState)
-      setMallFormErrors({})
-      setMallModal(false)
-      fetchMalls()
-      setAlertData({ response: { message: 'Centro comercial agregado correctamente' }, type: 'success' })
-    } catch (error) {
-      setAlertData({ response: { message: error.message }, type: 'danger' })
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
 
   // Exportar a Excel
   const exportToExcel = () => {
@@ -292,9 +229,7 @@ const Customers = () => {
       'Código Cliente': store.code_customer || 'N/A',
       'Número de Local': store.number_store || 'N/A',
       'RIF / Doc Cliente': store.number_customer || 'N/A',
-      'Teléfono': store.phone || 'No disponible',
-      'Centro Comercial': store.malls?.name || 'No asignado',
-      'Dirección C.C.': store.malls?.address || 'N/A'
+      'Teléfono': store.phone || 'No disponible'
     }))
 
     const worksheet = XLSX.utils.json_to_sheet(data)
@@ -317,26 +252,11 @@ const Customers = () => {
           <CButton color="success" className="text-white me-2" onClick={exportToExcel}>
             <CIcon icon={cilFolderOpen} /> Exportar a Excel
           </CButton>
-          <CButton color="warning" className="text-white me-2" onClick={() => setMallModal(true)}>
-            <CIcon icon={cilPlus} /> Añadir Centro Comercial
-          </CButton>
           <CButton color="primary" onClick={() => setAddModal(true)}>
             <CIcon icon={cilPlus} /> Añadir Local
           </CButton>
         </div>
         <div className="d-flex flex-wrap gap-2 align-items-center">
-          <CFormSelect
-            value={selectedMallFilter}
-            onChange={(e) => setSelectedMallFilter(e.target.value)}
-            className="me-2"
-          >
-            <option value="">Filtrar por Centro Comercial</option>
-            {malls.map((mall) => (
-              <option key={mall.id_mall} value={mall.id_mall}>
-                {mall.name}
-              </option>
-            ))}
-          </CFormSelect>
           <CFormInput
             placeholder="Buscar por código o número de local"
             value={searchQuery}
@@ -351,7 +271,6 @@ const Customers = () => {
             <CTableHead>
               <CTableRow>
                 <CTableHeaderCell>Código Cliente</CTableHeaderCell>
-                <CTableHeaderCell>Centro Comercial</CTableHeaderCell>
                 <CTableHeaderCell>N° de Local</CTableHeaderCell>
                 <CTableHeaderCell>Doc / RIF</CTableHeaderCell>
                 <CTableHeaderCell>Teléfono</CTableHeaderCell>
@@ -364,7 +283,6 @@ const Customers = () => {
                   <CTableDataCell className="fw-bold">
                     <CBadge color="dark">{store.code_customer || 'S/C'}</CBadge>
                   </CTableDataCell>
-                  <CTableDataCell>{store.malls?.name || <span className="text-muted">No asignado</span>}</CTableDataCell>
                   <CTableDataCell>{store.number_store || 'N/A'}</CTableDataCell>
                   <CTableDataCell>{store.number_customer || 'N/A'}</CTableDataCell>
                   <CTableDataCell>{store.phone || 'N/A'}</CTableDataCell>
@@ -388,8 +306,7 @@ const Customers = () => {
         </CCardBody>
       </CCard>
 
-      {/* --- MODAL DETALLES --- */}
-      <CModal visible={viewModal} onClose={() => setViewModal(false)}>
+      <CModal visible={viewModal} backdrop="static" onClose={() => setViewModal(false)}>
         <CModalHeader onClose={() => setViewModal(false)}>
           <CModalTitle>Detalles del Local</CModalTitle>
         </CModalHeader>
@@ -397,8 +314,6 @@ const Customers = () => {
           {selectedStore && (
             <ul className="list-group list-group-flush">
               <li className="list-group-item"><strong>Código Asignado:</strong> <CBadge color="primary">{selectedStore.code_customer}</CBadge></li>
-              <li className="list-group-item"><strong>Centro Comercial:</strong> {selectedStore.malls?.name || 'No asignado'}</li>
-              <li className="list-group-item"><strong>Dirección C.C.:</strong> {selectedStore.malls?.address || 'N/A'}</li>
               <li className="list-group-item"><strong>Número de Local:</strong> {selectedStore.number_store || 'N/A'}</li>
               <li className="list-group-item"><strong>Doc/RIF Cliente:</strong> {selectedStore.number_customer || 'N/A'}</li>
               <li className="list-group-item"><strong>Teléfono Contacto:</strong> {selectedStore.phone || 'No disponible'}</li>
@@ -410,8 +325,7 @@ const Customers = () => {
         </CModalFooter>
       </CModal>
 
-      {/* --- MODAL AÑADIR --- */}
-      <CModal visible={addModal} onClose={() => setAddModal(false)}>
+      <CModal visible={addModal} backdrop="static" onClose={() => setAddModal(false)}>
         <CModalHeader onClose={() => setAddModal(false)}>
           <CModalTitle>Añadir Nuevo Local (Cliente)</CModalTitle>
         </CModalHeader>
@@ -419,21 +333,6 @@ const Customers = () => {
           <CForm>
             <CFormInput label="Código del Cliente (Ej: CL-001)" name="code_customer" value={newStore.code_customer} onChange={handleInputChange} className="mb-2" invalid={Boolean(formErrors.code_customer)} />
             {formErrors.code_customer && <div className="text-danger small mb-2">{formErrors.code_customer}</div>}
-            
-            <CFormSelect label="Centro Comercial" name="id_mall" value={newStore.id_mall} onChange={handleInputChange} className="mb-2" invalid={Boolean(formErrors.id_mall)}>
-              <option value="">Seleccione el Mall</option>
-              {malls.map((mall) => (
-                <option key={mall.id_mall} value={mall.id_mall}>
-                  {mall.name}
-                </option>
-              ))}
-            </CFormSelect>
-            {formErrors.id_mall && <div className="text-danger small mb-2">{formErrors.id_mall}</div>}
-            {!malls.length && (
-              <div className="alert alert-warning small mb-2">
-                No hay centros comerciales registrados. Agrega uno primero.
-              </div>
-            )}
 
             <CFormInput label="Número del Local (Tienda)" name="number_store" value={newStore.number_store} onChange={handleInputChange} className="mb-2" invalid={Boolean(formErrors.number_store)} />
             {formErrors.number_store && <div className="text-danger small mb-2">{formErrors.number_store}</div>}
@@ -446,32 +345,10 @@ const Customers = () => {
           </CForm>
         </CModalBody>
         <CModalFooter>
-          <CButton color="primary" onClick={handleAddStore} disabled={isSubmitting || !malls.length}>
+          <CButton color="primary" onClick={handleAddStore} disabled={isSubmitting}>
             {isSubmitting ? 'Guardando...' : 'Guardar'}
           </CButton>
           <CButton color="secondary" onClick={() => setAddModal(false)} disabled={isSubmitting}>Cancelar</CButton>
-        </CModalFooter>
-      </CModal>
-
-      <CModal visible={mallModal} onClose={() => setMallModal(false)}>
-        <CModalHeader onClose={() => setMallModal(false)}>
-          <CModalTitle>Añadir Centro Comercial</CModalTitle>
-        </CModalHeader>
-        <CModalBody>
-          <CForm>
-            <CFormInput label="Nombre del Centro Comercial" name="name" value={newMall.name} onChange={handleMallInputChange} className="mb-2" invalid={Boolean(mallFormErrors.name)} />
-            {mallFormErrors.name && <div className="text-danger small mb-2">{mallFormErrors.name}</div>}
-            <CFormInput label="Dirección" name="address" value={newMall.address} onChange={handleMallInputChange} className="mb-2" invalid={Boolean(mallFormErrors.address)} />
-            {mallFormErrors.address && <div className="text-danger small mb-2">{mallFormErrors.address}</div>}
-          </CForm>
-        </CModalBody>
-        <CModalFooter>
-          <CButton color="primary" onClick={handleAddMall} disabled={isSubmitting}>
-            {isSubmitting ? 'Guardando...' : 'Guardar Centro Comercial'}
-          </CButton>
-          <CButton color="secondary" onClick={() => setMallModal(false)} disabled={isSubmitting}>
-            Cancelar
-          </CButton>
         </CModalFooter>
       </CModal>
 
@@ -485,16 +362,6 @@ const Customers = () => {
             <CForm>
               <CFormInput label="Código del Cliente" value={storeToEdit.code_customer} onChange={(e) => setStoreToEdit({ ...storeToEdit, code_customer: e.target.value })} className="mb-2" invalid={Boolean(formErrors.code_customer)} />
               {formErrors.code_customer && <div className="text-danger small mb-2">{formErrors.code_customer}</div>}
-
-              <CFormSelect label="Centro Comercial" value={storeToEdit.id_mall || ''} onChange={(e) => setStoreToEdit({ ...storeToEdit, id_mall: e.target.value })} className="mb-2" invalid={Boolean(formErrors.id_mall)}>
-                <option value="">Seleccione el Mall</option>
-                {malls.map((mall) => (
-                  <option key={mall.id_mall} value={mall.id_mall}>
-                    {mall.name}
-                  </option>
-                ))}
-              </CFormSelect>
-              {formErrors.id_mall && <div className="text-danger small mb-2">{formErrors.id_mall}</div>}
 
               <CFormInput label="Número del Local" value={storeToEdit.number_store} onChange={(e) => setStoreToEdit({ ...storeToEdit, number_store: e.target.value })} className="mb-2" invalid={Boolean(formErrors.number_store)} />
               {formErrors.number_store && <div className="text-danger small mb-2">{formErrors.number_store}</div>}
@@ -534,8 +401,11 @@ const Customers = () => {
         </CModalFooter>
       </CModal>
 
+      {/* Alerta flotante */}
       {alertData && (
-        <AlertMessage response={alertData.response} type={alertData.type} onClose={() => setAlertData(null)} />
+        <div className="position-fixed bottom-0 end-0 p-3" style={{ zIndex: 1080, maxWidth: '400px' }}>
+          <AlertMessage response={alertData.response} type={alertData.type} onClose={() => setAlertData(null)} />
+        </div>
       )}
     </div>
   )

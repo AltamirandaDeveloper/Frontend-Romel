@@ -110,7 +110,6 @@ const Users = () => {
     fetchRoles()
   }, [])
 
-  // Crear Usuario
   const handleAddUser = async () => {
     const validationErrors = getValidationErrors(createUserSchema, {
       ...newUser,
@@ -313,7 +312,7 @@ const Users = () => {
         </CModalFooter>
       </CModal>
 
-      <CModal visible={addModal} onClose={() => setAddModal(false)}>
+      <CModal visible={addModal} backdrop="static" onClose={() => setAddModal(false)}>
         <CModalHeader onClose={() => setAddModal(false)}>
           <CModalTitle>Añadir Nuevo Usuario</CModalTitle>
         </CModalHeader>
@@ -350,7 +349,7 @@ const Users = () => {
         </CModalFooter>
       </CModal>
 
-      <CModal visible={editModal} onClose={() => setEditModal(false)}>
+      <CModal visible={editModal} backdrop="static" onClose={() => setEditModal(false)}>
         <CModalHeader onClose={() => setEditModal(false)}>
           <CModalTitle>Editar Usuario</CModalTitle>
         </CModalHeader>

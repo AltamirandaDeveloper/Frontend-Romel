@@ -14,14 +14,13 @@ import { CNavItem } from '@coreui/react'
 import { getCurrentUserRole } from './utils/rolePermissions'
 
 const _nav = () => {
-  // Se ejecuta dinámicamente en cada render
   const role = getCurrentUserRole()
   const isAdmin = role === 'admin' || role === 'Administrador'
 
   return [
     ...(isAdmin ? [{
       component: CNavItem,
-      name: 'Dashboard',
+      name: 'Estadísticas',
       to: '/dashboard',
       icon: <CIcon icon={cilSpeedometer} customClassName="nav-icon" />,
     }] : []),

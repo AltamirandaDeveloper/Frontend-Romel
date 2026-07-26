@@ -145,7 +145,7 @@ const Login = () => {
               </CCard>
               <CCard className="login-right" style={{ width: '45%' }}>
                 <CCardBody className="d-flex flex-column justify-content-center align-items-center text-center">
-                  <h2>Sistema de Inventario</h2>
+                  <h2>Sistema de Inventario SionFit</h2>
                   <p className="mb-0 w-75">
                     Gestiona productos, ventas, clientes, inventario y reportes desde un solo lugar.
                   </p>

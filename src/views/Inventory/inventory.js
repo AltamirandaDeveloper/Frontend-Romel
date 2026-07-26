@@ -28,10 +28,9 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import JsBarcode from 'jsbarcode'
 import { createInventorySchema, updateInventorySchema } from '../../schemas/inventory.schema'
-import { getCurrentUserRole } from '../../utils/rolePermissions' // Importamos la función de roles
+import { getCurrentUserRole } from '../../utils/rolePermissions' 
 
 const Inventory = () => {
-  // Evaluamos el rol de forma dinámica
   const role = getCurrentUserRole()
   const isAdmin = role === 'admin' || role === 'Administrador'
 
@@ -40,17 +39,14 @@ const Inventory = () => {
   const [bags, setBags] = useState([])
   const [selectedBag, setSelectedBag] = useState(null)
   
-  // Modales
   const [viewModal, setViewModal] = useState(false)
   const [addModal, setAddModal] = useState(false)
   const [editModal, setEditModal] = useState(false)
   const [deleteModal, setDeleteModal] = useState(false)
   
-  // Estado para el modal de escaneo
   const [scanModal, setScanModal] = useState(false)
   const [addUnitsAmount, setAddUnitsAmount] = useState('')
 
-  // Estado para detalles de consignación/tiendas
   const [consignmentDetails, setConsignmentDetails] = useState([])
   const [isLoadingConsignments, setIsLoadingConsignments] = useState(false)
 
@@ -67,7 +63,6 @@ const Inventory = () => {
   const [currentPage, setCurrentPage] = useState(1)
   const ITEMS_PER_PAGE = 8
 
-  // Referencias para el escáner de código de barras
   const barcodeBuffer = useRef("")
   const typingTimeout = useRef(null)
 
@@ -97,9 +92,6 @@ const Inventory = () => {
     }
   }
 
-  // ==========================================
-  // CONSULTAR TIENDAS Y CONSIGNACIONES DEL BOLSO
-  // ==========================================
   const fetchConsignmentDetails = async (bagId) => {
     setIsLoadingConsignments(true)
     try {
@@ -115,10 +107,7 @@ const Inventory = () => {
             date_delivery,
             id_store,
             stores (
-              code_customer,
-              malls (
-                name
-              )
+              code_customer
             ),
             invoices (
               payment_status
@@ -182,27 +171,22 @@ const Inventory = () => {
     }
   }, [currentPage, totalPages])
 
-// Listener global para lector de código de barras
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
       if (e.key === 'Enter') {
         if (barcodeBuffer.current) {
-          // Normalizamos el código reemplazando las barras '/' por guiones '-'
           const scannedCode = barcodeBuffer.current.trim().replace(/\//g, '-');
           const foundBag = bags.find(b => b.code_bar === scannedCode);
           
           if (foundBag) {
             setSelectedBag(foundBag);
             
-            // Evaluamos el rol del usuario
             if (isAdmin) {
-              // Administrador: Mantiene la opción de agregar unidades al inventario
               setAddUnitsAmount('');
               setScanModal(true);
             } else {
-              // Empleado: Solo ve la información y no puede modificar el inventario
               setViewModal(true);
               fetchConsignmentDetails(foundBag.bag_id);
             }
@@ -224,7 +208,7 @@ const Inventory = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [bags, isAdmin]); // <-- Importante: Añadir isAdmin al array de dependencias
+  }, [bags, isAdmin]); 
 
   const generateBarcode = () => {
     return 'BAG-' + Math.floor(Math.random() * 1000000000)
@@ -444,10 +428,9 @@ const Inventory = () => {
 
     const tableColumn = ["Nombre del Producto", "Código de Barras"]
 
-    // 1. Incrustamos el objeto 'bag' completo dentro de la configuración de la celda
     const tableRows = bags.map(bag => [
       bag.model_name,
-      { content: '', bagData: bag } // 'content' vacío para no escribir texto, 'bagData' guarda la info
+      { content: '', bagData: bag } 
     ])
 
     autoTable(doc, {
@@ -459,10 +442,8 @@ const Inventory = () => {
       didDrawCell: function (data) {
         if (data.column.index === 1 && data.cell.section === 'body') {
           
-          // 2. Leemos la data directamente de la fila que autotable está dibujando
           const currentBag = data.row.raw[1].bagData
           
-          // 3. Verificamos que el bolso y el código existan para evitar colapsos
           if (!currentBag || !currentBag.code_bar) return;
 
           const canvas = document.createElement('canvas')
@@ -496,7 +477,6 @@ const Inventory = () => {
         <CButton color="dark" className="text-white" onClick={exportPrintablePDF}>
           <CIcon icon={cilPrint} className="me-1" /> Imprimir Códigos
         </CButton>
-        {/* Solo el admin ve el botón de añadir bolso */}
         {isAdmin && (
           <CButton color="primary" onClick={handleOpenAddModal}>
             <CIcon icon={cilPlus} /> Añadir Bolso
@@ -560,11 +540,9 @@ const Inventory = () => {
                     <CTableDataCell className="text-center"><CBadge color="warning">{bag.consigned_stock}</CBadge></CTableDataCell>
                     <CTableDataCell>
                       <div className="d-flex">
-                        {/* El botón de información lo ven todos */}
                         <CButton color="info" size="sm" className="me-2" onClick={() => handleView(bag)}>
                           <CIcon icon={cilInfo} className="text-white" />
                         </CButton>
-                        {/* Los botones de Editar y Eliminar solo los ve el admin */}
                         {isAdmin && (
                           <>
                             <CButton color="primary" size="sm" className="me-2" onClick={() => handleEdit(bag)}>
@@ -703,7 +681,6 @@ const Inventory = () => {
                     <CTableHead>
                       <CTableRow>
                         <CTableHeaderCell>Cód. Cliente</CTableHeaderCell>
-                        <CTableHeaderCell>Centro Comercial</CTableHeaderCell>
                         <CTableHeaderCell>Fecha Entrega</CTableHeaderCell>
                         <CTableHeaderCell className="text-center">Entregados</CTableHeaderCell>
                         <CTableHeaderCell className="text-center">Vendidos</CTableHeaderCell>
@@ -715,7 +692,6 @@ const Inventory = () => {
                       {pendingConsignments.map((detail) => {
                         const store = detail.delivery_notes?.stores
                         const customerCode = store?.code_customer || 'N/A'
-                        const mallName = store?.malls?.name || 'N/A'
 
                         const invoices = detail.delivery_notes?.invoices || []
                         const paymentStatus = invoices[0]?.payment_status || 'Pago pendiente'
@@ -723,7 +699,6 @@ const Inventory = () => {
                         return (
                           <CTableRow key={detail.detail_id}>
                             <CTableDataCell className="fw-bold">{customerCode}</CTableDataCell>
-                            <CTableDataCell>{mallName}</CTableDataCell>
                             <CTableDataCell>{detail.delivery_notes?.date_delivery || 'N/A'}</CTableDataCell>
                             <CTableDataCell className="text-center">{detail.delivered_quantity}</CTableDataCell>
                             <CTableDataCell className="text-center">{detail.sold_quantity || 0}</CTableDataCell>
@@ -750,7 +725,7 @@ const Inventory = () => {
 
       {/* --- MODAL AÑADIR --- */}
       {isAdmin && (
-        <CModal visible={addModal} onClose={() => setAddModal(false)}>
+        <CModal visible={addModal} backdrop="static" onClose={() => setAddModal(false)}>
           <CModalHeader onClose={() => setAddModal(false)}>
             <CModalTitle>Añadir Nuevo Bolso</CModalTitle>
           </CModalHeader>
@@ -786,7 +761,7 @@ const Inventory = () => {
 
       {/* --- MODAL EDITAR --- */}
       {isAdmin && (
-        <CModal visible={editModal} onClose={() => setEditModal(false)}>
+        <CModal visible={editModal} backdrop="static" onClose={() => setEditModal(false)}>
           <CModalHeader onClose={() => setEditModal(false)}>
             <CModalTitle>Editar Bolso</CModalTitle>
           </CModalHeader>
@@ -832,7 +807,9 @@ const Inventory = () => {
       )}
 
       {alertData && (
-        <AlertMessage response={alertData.response} type={alertData.type} onClose={() => setAlertData(null)} />
+        <div className="position-fixed bottom-0 end-0 p-3" style={{ zIndex: 1080, maxWidth: '400px' }}>
+          <AlertMessage response={alertData.response} type={alertData.type} onClose={() => setAlertData(null)} />
+        </div>
       )}
     </div>
   )

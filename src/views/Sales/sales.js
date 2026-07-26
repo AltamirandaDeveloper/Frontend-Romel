@@ -44,6 +44,13 @@ import AlertMessage from '../../components/ui/AlertMessage'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
+// Importación de Esquemas Zod
+import {
+  createDeliverySchema,
+  settlementItemSchema,
+  createExpenseSchema,
+} from '../../schemas/sales.schema'
+
 const Sales = () => {
   const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://backend-implantacion.onrender.com'
 
@@ -55,15 +62,51 @@ const Sales = () => {
   // Estados principales
   const [activeTab, setActiveTab] = useState(1)
   const [deliveries, setDeliveries] = useState([])
-  const [malls, setMalls] = useState([])
   const [stores, setStores] = useState([])
   const [bags, setBags] = useState([])
   const [expenses, setExpenses] = useState([])
   const [alertData, setAlertData] = useState(null)
 
-  // NUEVOS ESTADOS: Filtro
+  // Estados de errores para cada formulario
+  const [expenseErrors, setExpenseErrors] = useState({})
+  const [deliveryErrors, setDeliveryErrors] = useState({})
+  const [settlementErrors, setSettlementErrors] = useState({})
+
+  // Función helper centralizada para manejar alertas
+  const showAlert = (message, type = 'danger') => {
+    setAlertData({ response: { message }, type })
+  }
+
+  // Función helper para obtener errores de validación (soporta arrays)
+  const getValidationErrors = (schema, payload) => {
+    try {
+      schema.parse(payload)
+      return {}
+    } catch (error) {
+      if (error?.issues) {
+        return error.issues.reduce((acc, issue) => {
+          const field = issue.path.join('.')
+          acc[field] = issue.message
+          return acc
+        }, {})
+      }
+      return {}
+    }
+  }
+
+  // Auto-cerrar alertas
+  useEffect(() => {
+    if (alertData) {
+      const timer = setTimeout(() => {
+        setAlertData(null)
+      }, 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [alertData])
+
+  // Filtros
   const [filterPending, setFilterPending] = useState(false)
-  const [filterDate, setFilterDate] = useState('') 
+  const [filterDate, setFilterDate] = useState('')
 
   const getMaxDate = () => {
     const now = new Date()
@@ -86,7 +129,7 @@ const Sales = () => {
   const [deliveryDetails, setDeliveryDetails] = useState([])
   const [invoiceHistory, setInvoiceHistory] = useState([])
   const [settlementData, setSettlementData] = useState({})
-  
+
   // ESTADOS DE PAGO
   const [paymentMethod, setPaymentMethod] = useState('Cash')
   const [amountCash, setAmountCash] = useState('')
@@ -94,7 +137,7 @@ const Sales = () => {
   const [paymentDate, setPaymentDate] = useState(() => getLocalDateTimeValue())
   const [paymentNotes, setPaymentNotes] = useState('')
   const [receiptFile, setReceiptFile] = useState(null)
-  
+
   const [selectedExpense, setSelectedExpense] = useState(null)
   const [isUploading, setIsUploading] = useState(false)
 
@@ -124,22 +167,22 @@ const Sales = () => {
 
   // APLICACIÓN DEL FILTRO DE PENDIENTES Y FECHA
   const filteredDeliveries = deliveries.filter((del) => {
-    const matchesPending = filterPending 
-      ? (!del.invoices || del.invoices.length === 0) 
-      : true;
+    const matchesPending = filterPending
+      ? !del.invoices || del.invoices.length === 0
+      : true
 
-    let matchesDate = true;
+    let matchesDate = true
     if (filterDate && del.date_delivery) {
-      const d = new Date(del.date_delivery);
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      const formattedDeliveryDate = `${year}-${month}-${day}`;
+      const d = new Date(del.date_delivery)
+      const year = d.getFullYear()
+      const month = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      const formattedDeliveryDate = `${year}-${month}-${day}`
 
-      matchesDate = formattedDeliveryDate === filterDate;
+      matchesDate = formattedDeliveryDate === filterDate
     }
 
-    return matchesPending && matchesDate;
+    return matchesPending && matchesDate
   })
 
   const deliveryTotalPages = Math.max(1, Math.ceil(filteredDeliveries.length / itemsPerPage))
@@ -158,18 +201,11 @@ const Sales = () => {
   const fetchDeliveries = async () => {
     const { data, error } = await supabase
       .from('delivery_notes')
-      .select(
-        '*, stores(code_customer, number_store, id_mall), users(first_name, last_name), invoices(*)',
-      )
+      .select('*, stores(code_customer, number_store), users(first_name, last_name), invoices(*)')
       .order('delivery_id', { ascending: false })
 
-    if (error) setAlertData({ response: { message: error.message }, type: 'danger' })
+    if (error) showAlert(error.message, 'danger')
     else setDeliveries(data || [])
-  }
-
-  const fetchMalls = async () => {
-    const { data } = await supabase.from('malls').select('*')
-    setMalls(data || [])
   }
 
   const fetchStores = async () => {
@@ -188,13 +224,12 @@ const Sales = () => {
       .select('*, users(first_name, last_name)')
       .order('expense_id', { ascending: false })
 
-    if (error) setAlertData({ response: { message: error.message }, type: 'danger' })
+    if (error) showAlert(error.message, 'danger')
     else setExpenses(data || [])
   }
 
   useEffect(() => {
     fetchDeliveries()
-    fetchMalls()
     fetchStores()
     fetchBags()
     fetchExpenses()
@@ -226,15 +261,12 @@ const Sales = () => {
     return data.url
   }
 
-const processBarcodeScan = (scannedCode) => {
+  const processBarcodeScan = (scannedCode) => {
     const trimmedCode = scannedCode?.trim().replace(/\//g, '-')
     if (!trimmedCode) return
 
     const foundBag = bags.find(
-      (bag) =>
-        String(bag.code_bar || '')
-          .trim()
-          .toLowerCase() === trimmedCode.toLowerCase(),
+      (bag) => String(bag.code_bar || '').trim().toLowerCase() === trimmedCode.toLowerCase(),
     )
 
     if (foundBag) {
@@ -246,12 +278,10 @@ const processBarcodeScan = (scannedCode) => {
           existingItemIndex >= 0 ? Number(prevItems[existingItemIndex].quantity || 0) : 0
 
         if (currentQtyInCart + 1 > foundBag.warehouse_stock) {
-          setAlertData({
-            response: {
-              message: `Stock insuficiente en almacén para ${foundBag.model_name}. Disponibles: ${foundBag.warehouse_stock}`,
-            },
-            type: 'danger',
-          })
+          showAlert(
+            `Stock insuficiente en almacén para ${foundBag.model_name}. Disponibles: ${foundBag.warehouse_stock}`,
+            'danger',
+          )
           return prevItems
         }
 
@@ -264,10 +294,7 @@ const processBarcodeScan = (scannedCode) => {
         return [...prevItems, { bag_id: foundBag.bag_id, quantity: 1 }]
       })
     } else {
-      setAlertData({
-        response: { message: `No se encontró ningún bolso con el código: ${trimmedCode}` },
-        type: 'warning',
-      })
+      showAlert(`No se encontró ningún bolso con el código: ${trimmedCode}`, 'warning')
     }
 
     barcodeBufferRef.current = ''
@@ -282,6 +309,10 @@ const processBarcodeScan = (scannedCode) => {
     }
 
     const handleGlobalBarcodeKeydown = (event) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName)) {
+        return
+      }
+
       if (event.key === 'Enter') {
         event.preventDefault()
         processBarcodeScan(barcodeBufferRef.current)
@@ -313,47 +344,51 @@ const processBarcodeScan = (scannedCode) => {
     setDeliveryItems(deliveryItems.filter((_, i) => i !== index))
   }
 
+  // CREAR NOTA DE ENTREGA (CON VALIDACIÓN ZOD Y CONTROL DE STOCK)
   const handleCreateDeliveryNote = async () => {
-    if (!newDeliveryStore) {
-      setAlertData({
-        response: { message: 'Debe seleccionar un cliente registrado' },
-        type: 'warning',
-      })
-      return
+    const payload = {
+      id_store: newDeliveryStore || '',
+      items: deliveryItems,
     }
-    if (deliveryItems.length === 0) {
-      setAlertData({ response: { message: 'Debe agregar al menos un bolso' }, type: 'warning' })
+
+    const validationErrors = getValidationErrors(createDeliverySchema, payload)
+    if (Object.keys(validationErrors).length > 0) {
+      setDeliveryErrors(validationErrors)
       return
     }
 
+    const itemTotals = {}
     for (const item of deliveryItems) {
-      const bag = bags.find((b) => b.bag_id === Number(item.bag_id))
+      const bagId = Number(item.bag_id)
       const qty = Number(item.quantity)
-      if (!bag || qty <= 0) {
-        setAlertData({
-          response: { message: 'Seleccione un producto y cantidad válidos' },
-          type: 'warning',
-        })
+      itemTotals[bagId] = (itemTotals[bagId] || 0) + qty
+    }
+
+    for (const [bagIdStr, qty] of Object.entries(itemTotals)) {
+      const bagId = Number(bagIdStr)
+      const bag = bags.find((b) => b.bag_id === bagId)
+      if (!bag) {
+        showAlert('Uno de los productos seleccionados no existe', 'danger')
         return
       }
       if (qty > bag.warehouse_stock) {
-        setAlertData({
-          response: {
-            message: `Stock insuficiente en almacén para ${bag.model_name}. Disponibles: ${bag.warehouse_stock}`,
-          },
-          type: 'danger',
-        })
+        showAlert(
+          `Stock insuficiente para ${bag.model_name}. Solicitado: ${qty}, Disponible en almacén: ${bag.warehouse_stock}`,
+          'danger',
+        )
         return
       }
     }
 
     setIsUploading(true)
     try {
-      const storedUser = JSON.parse(sessionStorage.getItem('user') || localStorage.getItem('userInfo') || '{}')
+      const storedUser = JSON.parse(
+        sessionStorage.getItem('user') || localStorage.getItem('userInfo') || '{}',
+      )
       const internalUserId = storedUser.id_user
 
       if (!internalUserId) {
-        setAlertData({ response: { message: 'Error de sesión. Vuelve a iniciar sesión.' }, type: 'danger' })
+        showAlert('Sesión no válida o expirada. Por favor vuelva a iniciar sesión.', 'danger')
         setIsUploading(false)
         return
       }
@@ -372,9 +407,8 @@ const processBarcodeScan = (scannedCode) => {
 
       if (noteError) throw noteError
 
-      for (const item of deliveryItems) {
-        const bagId = Number(item.bag_id)
-        const qty = Number(item.quantity)
+      for (const [bagIdStr, qty] of Object.entries(itemTotals)) {
+        const bagId = Number(bagIdStr)
         const bag = bags.find((b) => b.bag_id === bagId)
 
         await supabase.from('delivery_details').insert([
@@ -401,14 +435,12 @@ const processBarcodeScan = (scannedCode) => {
       setNewDeliveryStore('')
       setFoundStore(null)
       setDeliveryItems([])
+      setDeliveryErrors({})
       fetchDeliveries()
       fetchBags()
-      setAlertData({
-        response: { message: 'Nota de entrega creada y stock actualizado' },
-        type: 'success',
-      })
+      showAlert('Nota de entrega registrada y stock actualizado con éxito', 'success')
     } catch (error) {
-      setAlertData({ response: { message: error.message }, type: 'danger' })
+      showAlert(error.message, 'danger')
     } finally {
       setIsUploading(false)
     }
@@ -444,11 +476,12 @@ const processBarcodeScan = (scannedCode) => {
       }
     })
     setSettlementData(initialSettlement)
+    setSettlementErrors({})
     setPaymentMethod('Cash')
-    
+
     setAmountCash('')
     setAmountTransfer('')
-    
+
     setPaymentDate(getLocalDateTimeValue())
     setPaymentNotes('')
     setReceiptFile(null)
@@ -464,57 +497,68 @@ const processBarcodeScan = (scannedCode) => {
 
   const calculatedTotal = deliveryDetails.reduce((sum, det) => {
     const sold = Number(settlementData[det.detail_id]?.sold) || 0
-    return sum + (sold * Number(det.bags?.sale_price || 0))
+    return sum + sold * Number(det.bags?.sale_price || 0)
   }, 0)
 
+  // LIQUIDAR NOTA DE ENTREGA (CON VALIDACIÓN DE ERRORES EN TABLA)
   const handleConfirmSettlement = async () => {
     if (invoiceHistory.length > 0) {
-      setAlertData({
-        response: {
-          message:
-            'Esta entrega ya tiene facturas registradas. Revise el historial para ver los detalles.',
-        },
-        type: 'warning',
-      })
+      showAlert('Esta entrega ya tiene facturas registradas.', 'warning')
       return
     }
 
     let amountTotal = 0
-    for (const [detailId, info] of Object.entries(settlementData)) {
-      const sold = Number(info.sold) || 0
-      const returned = Number(info.returned) || 0
-      if (sold + returned > info.delivered) {
-        setAlertData({
-          response: {
-            message: 'La suma de vendidos y devueltos no puede superar la cantidad entregada',
-          },
-          type: 'danger',
-        })
-        return
+    let hasErrors = false
+    const newSettlementErrors = {}
+
+    for (const det of deliveryDetails) {
+      const detailId = det.detail_id
+      const info = settlementData[detailId] || {}
+
+      const itemValidation = settlementItemSchema.safeParse({
+        sold: info.sold,
+        returned: info.returned,
+        delivered: Number(det.delivered_quantity),
+      })
+
+      if (!itemValidation.success) {
+        newSettlementErrors[detailId] = itemValidation.error.issues[0].message
+        hasErrors = true
+      } else {
+        amountTotal += Number(info.sold || 0) * Number(det.bags?.sale_price || 0)
       }
-      const det = deliveryDetails.find((d) => d.detail_id === Number(detailId))
-      amountTotal += sold * Number(det.bags.sale_price)
     }
+
+    if (hasErrors) {
+      setSettlementErrors(newSettlementErrors)
+      showAlert('Por favor, corrija los errores en las cantidades.', 'warning')
+      return
+    }
+
+    setSettlementErrors({})
 
     if (paymentMethod === 'mix') {
       const cashVal = Number(amountCash) || 0
       const transVal = Number(amountTransfer) || 0
-      if (cashVal + transVal !== amountTotal) {
-        setAlertData({
-          response: { 
-            message: `Los montos no cuadran. El total a pagar es $${amountTotal}, pero la suma de Efectivo ($${cashVal}) y Transferencia ($${transVal}) da un total de $${cashVal + transVal}.` 
-          },
-          type: 'danger',
-        })
+      if (Math.abs(cashVal + transVal - amountTotal) > 0.01) {
+        showAlert(
+          `Los montos no coinciden. El total a liquidar es $${amountTotal.toFixed(
+            2,
+          )}, pero la suma de Efectivo ($${cashVal}) y Transferencia ($${transVal}) es $${(
+            cashVal + transVal
+          ).toFixed(2)}.`,
+          'danger',
+        )
         return
       }
     }
 
-    if ((paymentMethod === 'Bank_Transfer' || paymentMethod === 'mix') && !receiptFile && amountTotal > 0) {
-      setAlertData({
-        response: { message: 'Debe subir el comprobante de pago de la transferencia' },
-        type: 'warning',
-      })
+    if (
+      (paymentMethod === 'Bank_Transfer' || paymentMethod === 'mix') &&
+      !receiptFile &&
+      amountTotal > 0
+    ) {
+      showAlert('Debe adjuntar el comprobante de pago de la transferencia', 'warning')
       return
     }
 
@@ -525,11 +569,13 @@ const processBarcodeScan = (scannedCode) => {
         receiptUrl = await uploadReceiptToBackend(receiptFile)
       }
 
-      const storedUser = JSON.parse(sessionStorage.getItem('user') || localStorage.getItem('userInfo') || '{}')
+      const storedUser = JSON.parse(
+        sessionStorage.getItem('user') || localStorage.getItem('userInfo') || '{}',
+      )
       const internalUserId = storedUser.id_user
 
       if (!internalUserId) {
-        setAlertData({ response: { message: 'Error de sesión. Vuelve a iniciar sesión.' }, type: 'danger' })
+        showAlert('Sesión no válida o expirada. Por favor vuelva a iniciar sesión.', 'danger')
         setIsUploading(false)
         return
       }
@@ -562,7 +608,9 @@ const processBarcodeScan = (scannedCode) => {
         payment_date: paymentDate || getLocalDateTimeValue(),
         notes:
           paymentNotes.trim() ||
-          `Liquidación #${selectedDelivery.delivery_id} - ${isReturned ? 'Devolución total de mercancía' : getPaymentMethodLabel(paymentMethod)}`,
+          `Liquidación #${selectedDelivery.delivery_id} - ${
+            isReturned ? 'Devolución total de mercancía' : getPaymentMethodLabel(paymentMethod)
+          }`,
       }
 
       const { data: createdInvoice, error: invoiceError } = await supabase
@@ -589,10 +637,11 @@ const processBarcodeScan = (scannedCode) => {
         setInvoiceHistory([createdInvoice])
       }
 
-      for (const [detailId, info] of Object.entries(settlementData)) {
+      for (const det of deliveryDetails) {
+        const detailId = det.detail_id
+        const info = settlementData[detailId]
         const sold = Number(info.sold) || 0
         const returned = Number(info.returned) || 0
-        const det = deliveryDetails.find((d) => d.detail_id === Number(detailId))
 
         await supabase
           .from('delivery_details')
@@ -603,42 +652,45 @@ const processBarcodeScan = (scannedCode) => {
           .eq('detail_id', Number(detailId))
 
         const bag = bags.find((b) => b.bag_id === det.bag_id)
-        await supabase
-          .from('bags')
-          .update({
-            total_stock: bag.total_stock - sold,
-            consigned_stock: bag.consigned_stock - (sold + returned),
-            warehouse_stock: bag.warehouse_stock + returned,
-          })
-          .eq('bag_id', det.bag_id)
+        if (bag) {
+          await supabase
+            .from('bags')
+            .update({
+              total_stock: bag.total_stock - sold,
+              consigned_stock: bag.consigned_stock - (sold + returned),
+              warehouse_stock: bag.warehouse_stock + returned,
+            })
+            .eq('bag_id', det.bag_id)
+        }
       }
 
       setSettleModal(false)
       fetchDeliveries()
       fetchBags()
-      setAlertData({
-        response: { message: 'Liquidación procesada y factura generada con éxito' },
-        type: 'success',
-      })
+      showAlert('Liquidación procesada y factura generada con éxito', 'success')
     } catch (error) {
-      setAlertData({ response: { message: error.message }, type: 'danger' })
+      showAlert(error.message, 'danger')
     } finally {
       setIsUploading(false)
     }
   }
 
+  // GUARDAR GASTO
   const handleSaveExpense = async () => {
-    if (!newExpense.amount || !newExpense.description) {
-      setAlertData({ response: { message: 'Complete los campos del gasto' }, type: 'warning' })
+    const validationErrors = getValidationErrors(createExpenseSchema, newExpense)
+    if (Object.keys(validationErrors).length > 0) {
+      setExpenseErrors(validationErrors)
       return
     }
 
     try {
-      const storedUser = JSON.parse(sessionStorage.getItem('user') || localStorage.getItem('userInfo') || '{}')
+      const storedUser = JSON.parse(
+        sessionStorage.getItem('user') || localStorage.getItem('userInfo') || '{}',
+      )
       const internalUserId = storedUser.id_user
 
       if (!internalUserId) {
-        setAlertData({ response: { message: 'Error de sesión. Vuelve a iniciar sesión.' }, type: 'danger' })
+        showAlert('Sesión no válida o expirada. Vuelva a iniciar sesión.', 'danger')
         return
       }
 
@@ -646,7 +698,7 @@ const processBarcodeScan = (scannedCode) => {
         {
           id_user: internalUserId,
           amount: Number(newExpense.amount),
-          description: newExpense.description,
+          description: newExpense.description.trim(),
           expense_date: getLocalDateTimeValue(),
         },
       ])
@@ -655,38 +707,33 @@ const processBarcodeScan = (scannedCode) => {
 
       setExpenseModal(false)
       setNewExpense({ amount: '', description: '' })
+      setExpenseErrors({})
       fetchExpenses()
-      setAlertData({ response: { message: 'Gasto registrado correctamente' }, type: 'success' })
+      showAlert('Gasto registrado correctamente', 'success')
     } catch (error) {
-      setAlertData({ response: { message: error.message }, type: 'danger' })
+      showAlert(error.message, 'danger')
     }
   }
 
-  // --- NUEVA LÓGICA DE REPORTE POR TIPO (DIARIO O SEMANAL) ---
   const downloadReportPDF = (reportType) => {
     const doc = new jsPDF()
     const now = new Date()
     const startDate = new Date(now)
 
     if (reportType === 'weekly') {
-      // Obtener el día de la semana (0 = Domingo, 1 = Lunes, ..., 6 = Sábado)
       const dayOfWeek = now.getDay()
-      // Calcular cuántos días restar para llegar al lunes de esta semana
       const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
       startDate.setDate(now.getDate() - diffToMonday)
     }
-    
-    // Fijamos la hora de inicio a las 00:00 del día calculado
+
     startDate.setHours(0, 0, 0, 0)
 
-    // 1. Inicializar objeto para agrupar por días
     const dailyData = {}
     for (let d = new Date(startDate); d <= now; d.setDate(d.getDate() + 1)) {
       const dateStr = d.toLocaleDateString()
       dailyData[dateStr] = { paid: 0, pending: 0, returned: 0, totalSales: 0, totalExpenses: 0 }
     }
 
-    // 2. Procesar las notas de entrega
     deliveries.forEach((del) => {
       const delDate = new Date(del.date_delivery)
       if (delDate >= startDate && delDate <= now) {
@@ -708,7 +755,6 @@ const processBarcodeScan = (scannedCode) => {
       }
     })
 
-    // 3. Procesar los gastos
     expenses.forEach((exp) => {
       const expDate = new Date(exp.expense_date)
       if (expDate >= startDate && expDate <= now) {
@@ -719,10 +765,17 @@ const processBarcodeScan = (scannedCode) => {
       }
     })
 
-    // 4. Formatear datos para autoTable de jsPDF
-    const tableColumn = ['Fecha', 'Pagadas', 'Pendientes', 'Devueltas', 'Ingresos', 'Gastos', 'Total Neto']
+    const tableColumn = [
+      'Fecha',
+      'Pagadas',
+      'Pendientes',
+      'Devueltas',
+      'Ingresos',
+      'Gastos',
+      'Total Neto',
+    ]
     const tableRows = []
-    
+
     let grandTotalSales = 0
     let grandTotalExpenses = 0
     let grandNetTotal = 0
@@ -741,20 +794,19 @@ const processBarcodeScan = (scannedCode) => {
         day.returned.toString(),
         `$${day.totalSales.toFixed(2)}`,
         `$${day.totalExpenses.toFixed(2)}`,
-        `$${netBalance.toFixed(2)}`
+        `$${netBalance.toFixed(2)}`,
       ]
       tableRows.push(rowData)
 
       grandTotalSales += day.totalSales
       grandTotalExpenses += day.totalExpenses
       grandNetTotal += netBalance
-      
+
       totalPaid += day.paid
       totalPending += day.pending
       totalReturned += day.returned
     })
 
-    // 5. Dibujar el Documento PDF
     doc.setFontSize(18)
     const pdfTitle = reportType === 'weekly' ? 'Reporte Semanal (Lun - Hoy)' : 'Reporte Diario'
     doc.text(`${pdfTitle} de Ventas y Gastos`, 14, 22)
@@ -767,7 +819,6 @@ const processBarcodeScan = (scannedCode) => {
       30,
     )
 
-    // Tabla principal
     autoTable(doc, {
       head: [tableColumn],
       body: tableRows,
@@ -789,8 +840,8 @@ const processBarcodeScan = (scannedCode) => {
       footStyles: { fillColor: [52, 73, 94], textColor: 255, fontStyle: 'bold' },
     })
 
-    // Descargar Archivo
-    const fileName = reportType === 'weekly' ? 'Reporte_Semanal_Ventas.pdf' : 'Reporte_Diario_Ventas.pdf'
+    const fileName =
+      reportType === 'weekly' ? 'Reporte_Semanal_Ventas.pdf' : 'Reporte_Diario_Ventas.pdf'
     doc.save(fileName)
   }
 
@@ -810,7 +861,6 @@ const processBarcodeScan = (scannedCode) => {
           <CTabPanel item={1} className={activeTab === 1 ? 'd-block' : 'd-none'}>
             <div className="d-flex justify-content-between mb-3 flex-wrap gap-2">
               <div className="d-flex gap-2 align-items-center flex-wrap">
-                
                 <CFormInput
                   type="date"
                   value={filterDate}
@@ -834,23 +884,29 @@ const processBarcodeScan = (scannedCode) => {
                   {filterPending ? 'Mostrando Pendientes' : 'Filtrar Pendientes'}
                 </CButton>
 
-                {/* --- NUEVOS BOTONES DE DESCARGA DE REPORTES --- */}
-                <CButton color="info" className="text-white shadow-sm text-nowrap" onClick={() => downloadReportPDF('daily')}>
+                <CButton
+                  color="info"
+                  className="text-white shadow-sm text-nowrap"
+                  onClick={() => downloadReportPDF('daily')}
+                >
                   <CIcon icon={cilCloudDownload} className="me-1" />
                   Reporte Diario
                 </CButton>
-                <CButton color="success" className="text-white shadow-sm text-nowrap" onClick={() => downloadReportPDF('weekly')}>
+                <CButton
+                  color="success"
+                  className="text-white shadow-sm text-nowrap"
+                  onClick={() => downloadReportPDF('weekly')}
+                >
                   <CIcon icon={cilCloudDownload} className="me-1" />
                   Reporte Semanal
                 </CButton>
-                {/* ---------------------------------------------- */}
               </div>
               <CButton
                 color="primary"
                 onClick={() => setAddDeliveryModal(true)}
                 className="shadow-sm text-nowrap"
               >
-              <CIcon icon={cilPlus} className="me-1" /> Nuevo Pedido
+                <CIcon icon={cilPlus} className="me-1" /> Nuevo Pedido
               </CButton>
             </div>
 
@@ -859,7 +915,6 @@ const processBarcodeScan = (scannedCode) => {
                 <CTable striped hover responsive align="middle">
                   <CTableHead>
                     <CTableRow>
-                      <CTableHeaderCell>Centro Comercial</CTableHeaderCell>
                       <CTableHeaderCell>Local / Cliente</CTableHeaderCell>
                       <CTableHeaderCell>Empleado</CTableHeaderCell>
                       <CTableHeaderCell>Fecha Entrega</CTableHeaderCell>
@@ -870,9 +925,6 @@ const processBarcodeScan = (scannedCode) => {
                     {paginatedDeliveries.map((del) => {
                       return (
                         <CTableRow key={del.delivery_id}>
-                          <CTableDataCell>
-                            {malls.find((m) => m.id_mall === del.stores?.id_mall)?.name || 'N/A'}
-                          </CTableDataCell>
                           <CTableDataCell>
                             {del.stores?.code_customer} - Local {del.stores?.number_store}
                           </CTableDataCell>
@@ -886,7 +938,9 @@ const processBarcodeScan = (scannedCode) => {
                             <div className="d-flex flex-column align-items-start gap-2">
                               {(() => {
                                 const latestInvoice =
-                                  del.invoices && del.invoices.length > 0 ? del.invoices[0] : null
+                                  del.invoices && del.invoices.length > 0
+                                    ? del.invoices[0]
+                                    : null
                                 const status = latestInvoice
                                   ? latestInvoice.payment_status
                                   : 'pending'
@@ -1059,42 +1113,59 @@ const processBarcodeScan = (scannedCode) => {
       </CTabs>
 
       {/* --- MODAL CREAR NOTA DE ENTREGA --- */}
-      <CModal visible={addDeliveryModal} onClose={() => {
-        setAddDeliveryModal(false)
-        setSearchClientCode('')
-        setNewDeliveryStore('')
-        setFoundStore(null)
-        setDeliveryItems([])
-      }} size="lg">
-        <CModalHeader onClose={() => {
+      <CModal
+        visible={addDeliveryModal}
+        backdrop="static"
+        keyboard={false}
+        onClose={() => {
           setAddDeliveryModal(false)
           setSearchClientCode('')
           setNewDeliveryStore('')
           setFoundStore(null)
           setDeliveryItems([])
-        }}>
+          setDeliveryErrors({})
+        }}
+        size="lg"
+      >
+        <CModalHeader
+          onClose={() => {
+            setAddDeliveryModal(false)
+            setSearchClientCode('')
+            setNewDeliveryStore('')
+            setFoundStore(null)
+            setDeliveryItems([])
+            setDeliveryErrors({})
+          }}
+        >
           <CModalTitle>Crear Nota de Entrega (Consignación)</CModalTitle>
         </CModalHeader>
         <CModalBody>
           <CForm>
-            
             <div className="mb-4 position-relative">
               <CFormInput
                 type="text"
                 label="Código de Cliente"
                 placeholder="Ej: Barinas-36"
                 value={searchClientCode}
+                invalid={Boolean(deliveryErrors.id_store)}
                 onChange={(e) => {
                   setSearchClientCode(e.target.value)
-                  setNewDeliveryStore('') 
+                  setNewDeliveryStore('')
                   setFoundStore(null)
+                  if (deliveryErrors.id_store) setDeliveryErrors({ ...deliveryErrors, id_store: '' })
                 }}
               />
-              
+              {deliveryErrors.id_store && <div className="text-danger small mt-1">{deliveryErrors.id_store}</div>}
+
               {searchClientCode && !newDeliveryStore && (
-                <CListGroup className="position-absolute w-100 shadow-sm" style={{ zIndex: 1000, maxHeight: '200px', overflowY: 'auto' }}>
+                <CListGroup
+                  className="position-absolute w-100 shadow-sm"
+                  style={{ zIndex: 1000, maxHeight: '200px', overflowY: 'auto' }}
+                >
                   {stores
-                    .filter((st) => st.code_customer?.toLowerCase().includes(searchClientCode.toLowerCase()))
+                    .filter((st) =>
+                      st.code_customer?.toLowerCase().includes(searchClientCode.toLowerCase()),
+                    )
                     .map((st) => (
                       <CListGroupItem
                         component="button"
@@ -1104,12 +1175,15 @@ const processBarcodeScan = (scannedCode) => {
                           setSearchClientCode(st.code_customer)
                           setNewDeliveryStore(st.id_store)
                           setFoundStore(st)
+                          setDeliveryErrors({ ...deliveryErrors, id_store: '' })
                         }}
                       >
                         <strong>{st.code_customer}</strong> - Local {st.number_store}
                       </CListGroupItem>
                     ))}
-                  {stores.filter((st) => st.code_customer?.toLowerCase().includes(searchClientCode.toLowerCase())).length === 0 && (
+                  {stores.filter((st) =>
+                    st.code_customer?.toLowerCase().includes(searchClientCode.toLowerCase()),
+                  ).length === 0 && (
                     <CListGroupItem>No se encontraron clientes con ese código</CListGroupItem>
                   )}
                 </CListGroup>
@@ -1140,29 +1214,53 @@ const processBarcodeScan = (scannedCode) => {
             </div>
 
             <h6 className="fw-bold">Artículos a entregar</h6>
+            {deliveryErrors.items && <div className="text-danger small mb-2">{deliveryErrors.items}</div>}
+            
             {deliveryItems.map((item, index) => (
-              <div key={index} className="d-flex gap-2 align-items-end mb-2">
-                <CFormSelect
-                  label="Bolso"
-                  value={item.bag_id}
-                  onChange={(e) => handleItemChange(index, 'bag_id', e.target.value)}
-                >
-                  <option value="">Seleccione Bolso</option>
-                  {bags.map((b) => (
-                    <option key={b.bag_id} value={b.bag_id}>
-                      {b.model_name} (Almacén: {b.warehouse_stock})
-                    </option>
-                  ))}
-                </CFormSelect>
-                <CFormInput
-                  type="number"
-                  label="Cantidad"
-                  value={item.quantity}
-                  onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
-                />
-                <CButton color="danger" size="sm" onClick={() => handleRemoveItem(index)}>
-                  <CIcon icon={cilTrash} className="text-white" />
-                </CButton>
+              <div key={index} className="mb-2">
+                <div className="d-flex gap-2 align-items-end">
+                  <div className="w-100">
+                    <CFormSelect
+                      label="Bolso"
+                      value={item.bag_id}
+                      invalid={Boolean(deliveryErrors[`items.${index}.bag_id`])}
+                      onChange={(e) => {
+                        handleItemChange(index, 'bag_id', e.target.value)
+                        if (deliveryErrors[`items.${index}.bag_id`]) {
+                          setDeliveryErrors({ ...deliveryErrors, [`items.${index}.bag_id`]: '' })
+                        }
+                      }}
+                    >
+                      <option value="">Seleccione Bolso</option>
+                      {bags.map((b) => (
+                        <option key={b.bag_id} value={b.bag_id}>
+                          {b.model_name} (Almacén: {b.warehouse_stock})
+                        </option>
+                      ))}
+                    </CFormSelect>
+                  </div>
+                  <div className="w-100">
+                    <CFormInput
+                      type="number"
+                      min="1"
+                      step="1"
+                      label="Cantidad"
+                      value={item.quantity}
+                      invalid={Boolean(deliveryErrors[`items.${index}.quantity`])}
+                      onChange={(e) => {
+                        handleItemChange(index, 'quantity', e.target.value)
+                        if (deliveryErrors[`items.${index}.quantity`]) {
+                          setDeliveryErrors({ ...deliveryErrors, [`items.${index}.quantity`]: '' })
+                        }
+                      }}
+                    />
+                  </div>
+                  <CButton color="danger" size="sm" onClick={() => handleRemoveItem(index)}>
+                    <CIcon icon={cilTrash} className="text-white" />
+                  </CButton>
+                </div>
+                {deliveryErrors[`items.${index}.bag_id`] && <div className="text-danger small">{deliveryErrors[`items.${index}.bag_id`]}</div>}
+                {deliveryErrors[`items.${index}.quantity`] && <div className="text-danger small">{deliveryErrors[`items.${index}.quantity`]}</div>}
               </div>
             ))}
             <CButton
@@ -1179,21 +1277,37 @@ const processBarcodeScan = (scannedCode) => {
           <CButton color="primary" onClick={handleCreateDeliveryNote} disabled={isUploading}>
             {isUploading ? 'Procesando...' : 'Guardar Pedido'}
           </CButton>
-          <CButton color="secondary" onClick={() => {
-            setAddDeliveryModal(false)
-            setSearchClientCode('')
-            setNewDeliveryStore('')
-            setFoundStore(null)
-            setDeliveryItems([])
-          }}>
+          <CButton
+            color="secondary"
+            onClick={() => {
+              setAddDeliveryModal(false)
+              setSearchClientCode('')
+              setNewDeliveryStore('')
+              setFoundStore(null)
+              setDeliveryItems([])
+              setDeliveryErrors({})
+            }}
+          >
             Cancelar
           </CButton>
         </CModalFooter>
       </CModal>
 
       {/* --- MODAL LIQUIDACIÓN (Settlement) --- */}
-      <CModal visible={settleModal} onClose={() => setSettleModal(false)} size="lg">
-        <CModalHeader onClose={() => setSettleModal(false)} className="bg-success text-white">
+      <CModal
+        visible={settleModal}
+        backdrop="static"
+        keyboard={false}
+        onClose={() => {
+          setSettleModal(false)
+          setSettlementErrors({})
+        }}
+        size="lg"
+      >
+        <CModalHeader onClose={() => {
+          setSettleModal(false)
+          setSettlementErrors({})
+        }} className="bg-success text-white">
           <CModalTitle>Liquidar Nota de Entrega</CModalTitle>
         </CModalHeader>
         <CModalBody>
@@ -1218,10 +1332,10 @@ const processBarcodeScan = (scannedCode) => {
                             invoice.payment_status === 'paid'
                               ? 'success'
                               : invoice.payment_status === 'partial'
-                                ? 'warning'
-                                : invoice.payment_status === 'returned'
-                                  ? 'dark'
-                                  : 'secondary'
+                              ? 'warning'
+                              : invoice.payment_status === 'returned'
+                              ? 'dark'
+                              : 'secondary'
                           }
                         >
                           {invoice.payment_status === 'returned'
@@ -1231,14 +1345,18 @@ const processBarcodeScan = (scannedCode) => {
                       </div>
                       <div className="small text-muted mt-1">
                         <div>Total: ${invoice.amount_total}</div>
-                        
-                        {(Number(invoice.amount_cash) > 0 || Number(invoice.amount_transfer) > 0) ? (
+
+                        {Number(invoice.amount_cash) > 0 || Number(invoice.amount_transfer) > 0 ? (
                           <>
-                            {Number(invoice.amount_cash) > 0 && <div>Efectivo: ${invoice.amount_cash}</div>}
-                            {Number(invoice.amount_transfer) > 0 && <div>Transferencia: ${invoice.amount_transfer}</div>}
+                            {Number(invoice.amount_cash) > 0 && (
+                              <div>Efectivo: ${invoice.amount_cash}</div>
+                            )}
+                            {Number(invoice.amount_transfer) > 0 && (
+                              <div>Transferencia: ${invoice.amount_transfer}</div>
+                            )}
                           </>
                         ) : (
-                           <div>Método: {getPaymentMethodLabel(invoice.payment_method)}</div>
+                          <div>Método: {getPaymentMethodLabel(invoice.payment_method)}</div>
                         )}
 
                         {invoice.payment_date && (
@@ -1288,27 +1406,47 @@ const processBarcodeScan = (scannedCode) => {
                           <CTableDataCell>
                             <CFormInput
                               type="number"
+                              min="0"
+                              max={det.delivered_quantity}
+                              step="1"
                               placeholder="0"
-                              value={settlementData[det.detail_id]?.sold || ''}
-                              onChange={(e) =>
+                              value={settlementData[det.detail_id]?.sold ?? ''}
+                              invalid={Boolean(settlementErrors[det.detail_id])}
+                              onChange={(e) => {
                                 handleSettlementChange(det.detail_id, 'sold', e.target.value)
-                              }
+                                if (settlementErrors[det.detail_id]) {
+                                  setSettlementErrors({ ...settlementErrors, [det.detail_id]: '' })
+                                }
+                              }}
                             />
                           </CTableDataCell>
                           <CTableDataCell>
                             <CFormInput
                               type="number"
+                              min="0"
+                              max={det.delivered_quantity}
+                              step="1"
                               placeholder="0"
-                              value={settlementData[det.detail_id]?.returned || ''}
-                              onChange={(e) =>
+                              value={settlementData[det.detail_id]?.returned ?? ''}
+                              invalid={Boolean(settlementErrors[det.detail_id])}
+                              onChange={(e) => {
                                 handleSettlementChange(det.detail_id, 'returned', e.target.value)
-                              }
+                                if (settlementErrors[det.detail_id]) {
+                                  setSettlementErrors({ ...settlementErrors, [det.detail_id]: '' })
+                                }
+                              }}
                             />
                           </CTableDataCell>
                         </CTableRow>
                       ))}
                     </CTableBody>
                   </CTable>
+                  
+                  {Object.keys(settlementErrors).length > 0 && (
+                    <div className="text-danger small text-center mb-3">
+                      * Las cantidades de algunos bolsos son incorrectas o están en blanco.
+                    </div>
+                  )}
 
                   <div className="mb-3 p-3 bg-light border border-info rounded text-info fw-bold text-center">
                     Total calculado a cobrar: ${calculatedTotal.toFixed(2)}
@@ -1329,6 +1467,8 @@ const processBarcodeScan = (scannedCode) => {
                     <div className="d-flex gap-2 mb-3">
                       <CFormInput
                         type="number"
+                        min="0"
+                        step="0.01"
                         label="Monto en Efectivo"
                         placeholder="Ej: 50"
                         value={amountCash}
@@ -1336,6 +1476,8 @@ const processBarcodeScan = (scannedCode) => {
                       />
                       <CFormInput
                         type="number"
+                        min="0"
+                        step="0.01"
                         label="Monto en Transferencia"
                         placeholder="Ej: 50"
                         value={amountTransfer}
@@ -1383,10 +1525,13 @@ const processBarcodeScan = (scannedCode) => {
                   {isUploading
                     ? 'Facturando...'
                     : invoiceHistory.length > 0
-                      ? 'Entrega ya liquidada'
-                      : 'Confirmar Liquidación'}
+                    ? 'Entrega ya liquidada'
+                    : 'Confirmar Liquidación'}
                 </CButton>
-                <CButton color="secondary" onClick={() => setSettleModal(false)}>
+                <CButton color="secondary" onClick={() => {
+                  setSettleModal(false)
+                  setSettlementErrors({})
+                }}>
                   Cancelar
                 </CButton>
               </div>
@@ -1396,7 +1541,7 @@ const processBarcodeScan = (scannedCode) => {
       </CModal>
 
       {/* --- MODAL DETALLE DE GASTO --- */}
-      <CModal visible={viewModal} onClose={() => setViewModal(false)}>
+      <CModal visible={viewModal} backdrop="static" keyboard={false} onClose={() => setViewModal(false)}>
         <CModalHeader onClose={() => setViewModal(false)}>
           <CModalTitle>Detalle del gasto</CModalTitle>
         </CModalHeader>
@@ -1408,7 +1553,7 @@ const processBarcodeScan = (scannedCode) => {
                 {selectedExpense.users?.last_name}
               </p>
               <p className="mb-2">
-                <strong>Monto:</strong> COP {selectedExpense.amount}
+                <strong>Monto:</strong> ${selectedExpense.amount}
               </p>
               <p className="mb-2">
                 <strong>Fecha:</strong> {new Date(selectedExpense.expense_date).toLocaleString()}
@@ -1428,44 +1573,77 @@ const processBarcodeScan = (scannedCode) => {
       </CModal>
 
       {/* --- MODAL REGISTRAR GASTO --- */}
-      <CModal visible={expenseModal} onClose={() => setExpenseModal(false)}>
-        <CModalHeader onClose={() => setExpenseModal(false)}>
+      <CModal visible={expenseModal} backdrop="static" keyboard={false} onClose={() => {
+        setExpenseModal(false)
+        setExpenseErrors({})
+      }}>
+        <CModalHeader onClose={() => {
+          setExpenseModal(false)
+          setExpenseErrors({})
+        }}>
           <CModalTitle>Registrar Gasto Administrativo / Extra</CModalTitle>
         </CModalHeader>
         <CModalBody>
           <CForm>
             <CFormInput
               type="number"
-              label="Monto (COP)"
+              min="0.01"
+              step="0.01"
+              label="Monto ($)"
               value={newExpense.amount}
-              onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })}
+              invalid={Boolean(expenseErrors.amount)}
+              onChange={(e) => {
+                setNewExpense({ ...newExpense, amount: e.target.value })
+                if (expenseErrors.amount) setExpenseErrors({ ...expenseErrors, amount: '' })
+              }}
               className="mb-2"
             />
+            {expenseErrors.amount && <div className="text-danger small mb-2">{expenseErrors.amount}</div>}
+
             <CFormInput
               label="Descripción (Ej: Gasolina, estacionamiento)"
               value={newExpense.description}
-              onChange={(e) => setNewExpense({ ...newExpense, description: e.target.value })}
+              invalid={Boolean(expenseErrors.description)}
+              onChange={(e) => {
+                setNewExpense({ ...newExpense, description: e.target.value })
+                if (expenseErrors.description) setExpenseErrors({ ...expenseErrors, description: '' })
+              }}
               className="mb-2"
             />
+            {expenseErrors.description && <div className="text-danger small mb-2">{expenseErrors.description}</div>}
           </CForm>
         </CModalBody>
         <CModalFooter>
           <CButton color="warning" className="text-white" onClick={handleSaveExpense}>
             Guardar Gasto
           </CButton>
-          <CButton color="secondary" onClick={() => setExpenseModal(false)}>
+          <CButton color="secondary" onClick={() => {
+            setExpenseModal(false)
+            setExpenseErrors({})
+          }}>
             Cancelar
           </CButton>
         </CModalFooter>
       </CModal>
 
-      {alertData && (
-        <AlertMessage
-          response={alertData.response}
-          type={alertData.type}
-          onClose={() => setAlertData(null)}
-        />
-      )}
+      {/* Alerta flotante superpuesta */}
+      <div
+        style={{
+          position: 'fixed',
+          top: '20px',
+          right: '20px',
+          zIndex: 9999,
+          minWidth: '300px',
+        }}
+      >
+        {alertData && (
+          <AlertMessage
+            response={alertData.response}
+            type={alertData.type}
+            onClose={() => setAlertData(null)}
+          />
+        )}
+      </div>
     </div>
   )
 }

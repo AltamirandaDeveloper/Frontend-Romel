@@ -47,8 +47,14 @@ const AppHeader = () => {
           <CIcon icon={cilMenu} size="lg" />
         </CHeaderToggler>
         <CHeaderNav className="ms-auto">
-          <CButton color="danger" shape="rounded-pill" size="sm" onClick={handleLogout}>
-            <CIcon icon={cilAccountLogout} className="me-2" /> Cerrar sesión
+          <CButton 
+            color="danger" 
+            shape="rounded-pill" 
+            size="sm" 
+            onClick={handleLogout}
+            className="text-white"
+          >
+          <CIcon icon={cilAccountLogout} className="me-2" /> Cerrar sesión
           </CButton>
         </CHeaderNav>
       </CContainer>
