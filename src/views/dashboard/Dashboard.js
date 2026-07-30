@@ -23,16 +23,15 @@ import AlertMessage from '../../components/ui/AlertMessage'
 const Dashboard = () => {
   const [metrics, setMetrics] = useState({
     totalSalesAmount: 0,
-    totalCashSales: 0, // NUEVO: Total en efectivo
-    totalTransferSales: 0, // NUEVO: Total en transferencias
+    totalCashSales: 0,
+    totalTransferSales: 0,
     activeDeliveriesCount: 0,
     totalWarehouseStock: 0,
     totalConsignedStock: 0,
     totalStoresCount: 0,
-    totalMallsCount: 0,
   })
 
-  const [allInvoices, setAllInvoices] = useState([]) // Guardamos todas las facturas para poder filtrar por mes
+  const [allInvoices, setAllInvoices] = useState([])
   const [recentInvoices, setRecentInvoices] = useState([])
   const [lowStockBags, setLowStockBags] = useState([])
   const [alertData, setAlertData] = useState(null)
@@ -46,7 +45,6 @@ const Dashboard = () => {
     totalRealizedProfit: 0,
   })
 
-  // Estado para el selector de mes y año
   const [selectedMonth, setSelectedMonth] = useState(String(new Date().getMonth() + 1))
   const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()))
 
@@ -84,10 +82,10 @@ const Dashboard = () => {
 
   const fetchDashboardData = async () => {
     try {
-      // 1. Obtener Facturas / Ventas totales
+      // 1. Obtener Facturas / Ventas totales (Consulta limpia sin joins a malls)
       const { data: invoices, error: invError } = await supabase
         .from('invoices')
-        .select('*, delivery_notes(stores(code_customer, number_store))')
+        .select('*')
         .order('date_billing', { ascending: false })
 
       if (invError) throw invError
@@ -99,7 +97,6 @@ const Dashboard = () => {
       setAllInvoices(periodInvoices)
       setRecentInvoices(periodInvoices.slice(0, 5) || [])
 
-      // NUEVO: Calcular ventas totales, en efectivo y por transferencia
       let totalSales = 0
       let totalCash = 0
       let totalTransfer = 0
@@ -108,12 +105,10 @@ const Dashboard = () => {
         const amount = Number(inv.amount_total) || 0
         totalSales += amount
 
-        // Verificamos si el método de pago es "Cash" o "Efectivo"
         const method = (inv.payment_method || '').toLowerCase()
         if (method === 'cash' || method === 'efectivo') {
           totalCash += amount
         } else {
-          // Asumimos que cualquier otra cosa (Transfer, Zelle, Pago Móvil) cuenta como transferencia
           totalTransfer += amount
         }
       })
@@ -126,7 +121,6 @@ const Dashboard = () => {
 
       if (bagError) throw bagError
 
-      // Filtramos solo los activos para el stock general
       const activeBags = bags?.filter((b) => (b.status || '').toLowerCase() === 'active') || []
       const warehouseStock = activeBags.reduce(
         (acc, curr) => acc + Number(curr.warehouse_stock || 0),
@@ -140,24 +134,19 @@ const Dashboard = () => {
       const lowStock = activeBags.filter((b) => Number(b.warehouse_stock || 0) <= 5) || []
       setLowStockBags(lowStock)
 
-      // 4. Clientes y Centros Comerciales
+      // 4. Conteo de tiendas (Sin consultar malls)
       const { count: storesCount } = await supabase
         .from('stores')
         .select('*', { count: 'exact', head: true })
 
-      const { count: mallsCount } = await supabase
-        .from('malls')
-        .select('*', { count: 'exact', head: true })
-
       setMetrics({
         totalSalesAmount: totalSales,
-        totalCashSales: totalCash, // Guardar métrica efectivo
-        totalTransferSales: totalTransfer, // Guardar métrica transferencia
+        totalCashSales: totalCash,
+        totalTransferSales: totalTransfer,
         activeDeliveriesCount: activeDeliveriesCount || 0,
         totalWarehouseStock: warehouseStock,
         totalConsignedStock: consignedStock,
         totalStoresCount: storesCount || 0,
-        totalMallsCount: mallsCount || 0,
       })
 
       // 5. Calcular ventas generales y mapa de ventas por código
@@ -259,7 +248,6 @@ const Dashboard = () => {
     fetchDashboardData()
   }, [selectedMonth, selectedYear])
 
-  // --- Funciones de Descarga CSV Corregidas para Excel ---
   const downloadCSV = (content, fileName) => {
     const bom = '\uFEFF'
     const blob = new Blob([bom + content], { type: 'text/csv;charset=utf-8;' })
@@ -325,7 +313,6 @@ const Dashboard = () => {
       ['Total Stock Almacén', metrics.totalWarehouseStock],
       ['Total Stock Consignado', metrics.totalConsignedStock],
       ['Locales Totales', metrics.totalStoresCount],
-      ['Centros Comerciales', metrics.totalMallsCount],
       ['Bolso Más Vendido (Modelo)', bestSellingBag.name],
       ['Bolso Más Vendido (Cantidad)', bestSellingBag.qty],
     ]
@@ -396,7 +383,6 @@ const Dashboard = () => {
       <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4 gap-3">
         <h3 className="mb-0">Panel de Estadísticas y Control</h3>
 
-        {/* Controles de exportación y selector de mes */}
         <div className="d-flex flex-wrap align-items-center gap-2">
           <CFormSelect
             value={selectedMonth}
@@ -440,9 +426,7 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* --- TARJETAS DE MÉTRICAS CLAVE (KPIs) --- */}
       <CRow className="mb-4">
-        {/* TARJETA MODIFICADA PARA DESGLOSE EFECTIVO/TRANSFERENCIA */}
         <CCol sm={6} lg={3} className="mb-3">
           <CCard className="text-white bg-primary h-100 d-flex flex-column">
             <CCardBody className="d-flex flex-column justify-content-between">
@@ -454,7 +438,6 @@ const Dashboard = () => {
                 <CIcon icon={cilMoney} height={36} />
               </div>
 
-              {/* Desglose en la parte inferior de la tarjeta */}
               <div className="d-flex justify-content-between text-sm mt-3 pt-3 border-top border-light border-opacity-50">
                 <div>
                   <small className="opacity-75 d-block">Efectivo</small>
@@ -509,7 +492,6 @@ const Dashboard = () => {
         </CCol>
       </CRow>
 
-      {/* --- SECCIÓN LÍNEA CA / CARLA --- */}
       <CRow className="mb-4">
         <CCol xs={12}>
           <CCard className="shadow-sm">
@@ -594,7 +576,6 @@ const Dashboard = () => {
         </CCol>
       </CRow>
 
-      {/* --- TABLAS DE RESUMEN / ALERTAS --- */}
       <CRow>
         <CCol md={6} className="mb-4">
           <CCard className="h-100 shadow-sm border-0">
@@ -679,7 +660,6 @@ const Dashboard = () => {
         </CCol>
       </CRow>
 
-      {/* Alertas Globales */}
       {alertData && (
         <AlertMessage
           response={alertData.response}
