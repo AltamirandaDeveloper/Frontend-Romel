@@ -86,11 +86,12 @@ const Customers = () => {
     }
   }
 
-  // Cargar Tiendas (Stores)
+  // Cargar Tiendas (Stores) - Filtrando solo las activas (is_active = true)
   const fetchStores = async () => {
     const { data, error } = await supabase
       .from('stores')
       .select('*')
+      .eq('is_active', true)
       .order('id_store', { ascending: false })
 
     if (error) {
@@ -180,7 +181,7 @@ const Customers = () => {
     }
   }
 
-  // Eliminar Cliente 
+  // Eliminar Cliente (Soft Delete: cambia status de is_active a false)
   const handleDelete = (store) => {
     setStoreToDelete(store)
     setDeleteModal(true)
@@ -191,7 +192,7 @@ const Customers = () => {
     try {
       const { error } = await supabase
         .from('stores')
-        .delete()
+        .update({ is_active: false })
         .eq('id_store', storeToDelete.id_store)
 
       if (error) throw error
@@ -199,7 +200,7 @@ const Customers = () => {
       setStores(stores.filter((store) => store.id_store !== storeToDelete.id_store))
       setDeleteModal(false)
       setStoreToDelete(null)
-      setAlertData({ response: { message: 'Cliente eliminado correctamente' }, type: 'success' })
+      setAlertData({ response: { message: 'Cliente desactivado correctamente' }, type: 'success' })
     } catch (error) {
       setAlertData({ response: { message: error.message }, type: 'danger' })
     }
@@ -382,21 +383,21 @@ const Customers = () => {
         </CModalFooter>
       </CModal>
 
-      {/* --- MODAL ELIMINAR --- */}
+      {/* --- MODAL ELIMINAR / DESACTIVAR --- */}
       <CModal visible={deleteModal} onClose={() => setDeleteModal(false)}>
         <CModalHeader onClose={() => setDeleteModal(false)}>
-          <CModalTitle>Confirmar Eliminación</CModalTitle>
+          <CModalTitle>Confirmar Desactivación</CModalTitle>
         </CModalHeader>
         <CModalBody>
           {storeToDelete && (
-            <p>¿Estás seguro de que deseas eliminar el registro del local <strong>{storeToDelete.number_store}</strong> perteneciente al cliente <strong>{storeToDelete.code_customer}</strong>?</p>
+            <p>¿Estás seguro de que deseas desactivar el registro del local <strong>{storeToDelete.number_store}</strong> perteneciente al cliente <strong>{storeToDelete.code_customer}</strong>?</p>
           )}
-          <div className="alert alert-warning small">
-            Nota: Esto eliminará el registro físicamente de la base de datos y podría fallar si el local tiene Notas de Entrega vinculadas.
+          <div className="alert alert-info small">
+            Nota: Este registro se ocultará de la lista principal, pero se conservará en la base de datos para no alterar el historial de Notas de Entrega asociadas.
           </div>
         </CModalBody>
         <CModalFooter>
-          <CButton color="danger" onClick={confirmDelete}>Eliminar</CButton>
+          <CButton color="danger" onClick={confirmDelete}>Desactivar</CButton>
           <CButton color="secondary" onClick={() => setDeleteModal(false)}>Cancelar</CButton>
         </CModalFooter>
       </CModal>
