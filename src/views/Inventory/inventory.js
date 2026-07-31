@@ -319,6 +319,8 @@ const Inventory = () => {
   const handleEdit = (bag) => {
     setBagToEdit(bag)
     setFormErrors({})
+    setImageFile(null)
+    setImagePreview(null)
     setEditModal(true)
   }
 
@@ -331,6 +333,13 @@ const Inventory = () => {
 
     setIsSubmitting(true)
     try {
+      let imageUrl = bagToEdit.image_url
+      
+      if (imageFile) {
+        setIsUploading(true)
+        imageUrl = await uploadImageToBackend(imageFile)
+      }
+
       const totalStockNum = Number(bagToEdit.total_stock)
       const newWarehouseStock = totalStockNum - bagToEdit.consigned_stock
 
@@ -341,7 +350,8 @@ const Inventory = () => {
           investment_cost: Number(bagToEdit.investment_cost),
           sale_price: Number(bagToEdit.sale_price),
           total_stock: totalStockNum,
-          warehouse_stock: newWarehouseStock
+          warehouse_stock: newWarehouseStock,
+          image_url: imageUrl
         })
         .eq('bag_id', bagToEdit.bag_id)
 
@@ -350,11 +360,14 @@ const Inventory = () => {
       fetchBags()
       setEditModal(false)
       setBagToEdit(null)
+      setImageFile(null)
+      setImagePreview(null)
       setAlertData({ response: { message: 'Bolso actualizado exitosamente' }, type: 'success' })
     } catch (error) {
       setAlertData({ response: { message: error.message }, type: 'danger' })
     } finally {
       setIsSubmitting(false)
+      setIsUploading(false)
     }
   }
 
@@ -588,7 +601,7 @@ const Inventory = () => {
       </CCard>
 
       {/* --- MODAL ESCANEO ACTIVO --- */}
-      <CModal visible={scanModal} onClose={() => setScanModal(false)}>
+      <CModal visible={scanModal} backdrop="static" onClose={() => setScanModal(false)}>
         <CModalHeader onClose={() => setScanModal(false)} className="bg-success text-white">
           <CModalTitle>¡Bolso Escaneado!</CModalTitle>
         </CModalHeader>
@@ -629,7 +642,7 @@ const Inventory = () => {
       </CModal>
 
       {/* --- MODAL VER Y UBICACIÓN EN TIENDAS --- */}
-      <CModal visible={viewModal} onClose={() => setViewModal(false)} size="lg">
+      <CModal visible={viewModal} backdrop="static" onClose={() => setViewModal(false)} size="lg">
         <CModalHeader onClose={() => setViewModal(false)}>
           <CModalTitle>Detalle del Bolso y Ubicación en Tiendas</CModalTitle>
         </CModalHeader>
@@ -778,19 +791,32 @@ const Inventory = () => {
                 {formErrors.sale_price && <div className="text-danger small mb-2">{formErrors.sale_price}</div>}
                 <CFormInput type="number" label="Stock Total" value={bagToEdit.total_stock} onChange={(e) => setBagToEdit({ ...bagToEdit, total_stock: e.target.value })} className="mb-2" invalid={Boolean(formErrors.total_stock)} />
                 {formErrors.total_stock && <div className="text-danger small mb-2">{formErrors.total_stock}</div>}
+                
+                <CFormInput type="file" label="Actualizar Imagen del Bolso (Opcional)" accept="image/*" onChange={handleFileChange} className="mb-2" />
+                {imagePreview ? (
+                  <div className="mb-3 text-center">
+                    <img src={imagePreview} alt="Vista previa" className="img-fluid rounded" style={{ maxHeight: '180px' }} />
+                  </div>
+                ) : bagToEdit.image_url && (
+                  <div className="mb-3 text-center">
+                    <img src={bagToEdit.image_url} alt="Imagen actual" className="img-fluid rounded" style={{ maxHeight: '180px' }} />
+                  </div>
+                )}
               </CForm>
             )}
           </CModalBody>
           <CModalFooter>
-            <CButton type="button" color="primary" onClick={handleSaveEdit}>Guardar Cambios</CButton>
-            <CButton type="button" color="secondary" onClick={() => setEditModal(false)}>Cancelar</CButton>
+            <CButton type="button" color="primary" onClick={handleSaveEdit} disabled={isSubmitting || isUploading}>
+              {isSubmitting || isUploading ? 'Guardando...' : 'Guardar Cambios'}
+            </CButton>
+            <CButton type="button" color="secondary" onClick={() => setEditModal(false)} disabled={isSubmitting || isUploading}>Cancelar</CButton>
           </CModalFooter>
         </CModal>
       )}
 
       {/* --- MODAL ELIMINAR --- */}
       {isAdmin && (
-        <CModal visible={deleteModal} onClose={() => setDeleteModal(false)}>
+        <CModal visible={deleteModal} backdrop="static" onClose={() => setDeleteModal(false)}>
           <CModalHeader onClose={() => setDeleteModal(false)}>
             <CModalTitle>Confirmar Eliminación</CModalTitle>
           </CModalHeader>
