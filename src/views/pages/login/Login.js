@@ -45,6 +45,7 @@ const Login = () => {
         .from('users')
         .select('*')
         .eq('email', formData.email.trim())
+        .eq('status', 'active') // Opción A: Solo permite usuarios activos
         .limit(1)
 
       if (error) throw error

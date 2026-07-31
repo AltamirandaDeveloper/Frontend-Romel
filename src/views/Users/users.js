@@ -28,6 +28,9 @@ import { createUserSchema, updateUserSchema } from '../../schemas/users.schema'
 import './users.css'
 
 const Users = () => {
+  // Obtenemos el usuario actual de la sesión
+  const currentUser = JSON.parse(sessionStorage.getItem('user') || '{}')
+
   const [users, setUsers] = useState([])
   const [roles, setRoles] = useState([])
   const [selectedUser, setSelectedUser] = useState(null)
@@ -277,9 +280,14 @@ const Users = () => {
                       <CButton color="primary" size="sm" className="me-2" onClick={() => handleEdit(user)}>
                         <CIcon icon={cilPencil} className="text-white" />
                       </CButton>
-                      <CButton color="danger" size="sm" className="me-2" onClick={() => handleDelete(user)}>
-                        <CIcon icon={cilTrash} className="text-white" />
-                      </CButton>
+                      
+                      {/* Validamos que el usuario en la fila no sea el mismo que está loggeado */}
+                      {user.id_user !== currentUser.id_user && (
+                        <CButton color="danger" size="sm" className="me-2" onClick={() => handleDelete(user)}>
+                          <CIcon icon={cilTrash} className="text-white" />
+                        </CButton>
+                      )}
+
                       <CButton color="info" size="sm" onClick={() => handleView(user)}>
                         <CIcon icon={cilInfo} className="text-white" />
                       </CButton>
