@@ -51,7 +51,7 @@ const Login = () => {
       if (error) throw error
 
       if (!users || users.length === 0) {
-        throw new Error('Credenciales inválidas')
+        throw new Error('Credenciales inválidas o cuenta desactivada')
       }
 
       const user = users[0]
