@@ -146,6 +146,11 @@ const Sales = () => {
   const [searchClientCode, setSearchClientCode] = useState('')
   const [foundStore, setFoundStore] = useState(null)
   const [deliveryItems, setDeliveryItems] = useState([])
+  const [bagSearchTerm, setBagSearchTerm] = useState('')
+  const [activeBagSearchIndex, setActiveBagSearchIndex] = useState(null)
+  const filteredBags = bags.filter((bag) =>
+    bag.model_name?.toLowerCase().includes(bagSearchTerm.trim().toLowerCase()),
+  )
 
   // Formulario nuevo Gasto (`expenses`)
   const [newExpense, setNewExpense] = useState({ amount: '', description: '' })
@@ -1124,6 +1129,8 @@ const Sales = () => {
           setFoundStore(null)
           setDeliveryItems([])
           setDeliveryErrors({})
+          setBagSearchTerm('')
+          setActiveBagSearchIndex(null)
         }}
         size="lg"
       >
@@ -1135,6 +1142,8 @@ const Sales = () => {
             setFoundStore(null)
             setDeliveryItems([])
             setDeliveryErrors({})
+            setBagSearchTerm('')
+            setActiveBagSearchIndex(null)
           }}
         >
           <CModalTitle>Crear Nota de Entrega (Consignación)</CModalTitle>
@@ -1214,30 +1223,72 @@ const Sales = () => {
             </div>
 
             <h6 className="fw-bold">Artículos a entregar</h6>
-            {deliveryErrors.items && <div className="text-danger small mb-2">{deliveryErrors.items}</div>}
-            
+            {deliveryErrors.items && (
+              <div className="text-danger small mb-2">{deliveryErrors.items}</div>
+            )}
+
             {deliveryItems.map((item, index) => (
               <div key={index} className="mb-2">
                 <div className="d-flex gap-2 align-items-end">
-                  <div className="w-100">
-                    <CFormSelect
+                  <div className="w-100 position-relative">
+                    <CFormInput
+                      type="text"
                       label="Bolso"
-                      value={item.bag_id}
+                      placeholder="Buscar bolso por nombre..."
+                      value={
+                        activeBagSearchIndex === index
+                          ? bagSearchTerm
+                          : bags.find((bag) => String(bag.bag_id) === String(item.bag_id))
+                              ?.model_name || ''
+                      }
                       invalid={Boolean(deliveryErrors[`items.${index}.bag_id`])}
-                      onChange={(e) => {
-                        handleItemChange(index, 'bag_id', e.target.value)
-                        if (deliveryErrors[`items.${index}.bag_id`]) {
-                          setDeliveryErrors({ ...deliveryErrors, [`items.${index}.bag_id`]: '' })
-                        }
+                      onFocus={() => {
+                        setBagSearchTerm('')
+                        setActiveBagSearchIndex(index)
                       }}
-                    >
-                      <option value="">Seleccione Bolso</option>
-                      {bags.map((b) => (
-                        <option key={b.bag_id} value={b.bag_id}>
-                          {b.model_name} (Almacén: {b.warehouse_stock})
-                        </option>
-                      ))}
-                    </CFormSelect>
+                      onBlur={() => setActiveBagSearchIndex(null)}
+                      onChange={(e) => {
+                        setBagSearchTerm(e.target.value)
+                        setActiveBagSearchIndex(index)
+                        handleItemChange(index, 'bag_id', '')
+                      }}
+                    />
+                    {activeBagSearchIndex === index && (
+                      <CListGroup
+                        className="position-absolute w-100 shadow-sm"
+                        style={{
+                          top: '100%',
+                          zIndex: 1000,
+                          maxHeight: '200px',
+                          overflowY: 'auto',
+                        }}
+                      >
+                        {filteredBags.map((bag) => (
+                          <CListGroupItem
+                            component="button"
+                            type="button"
+                            key={bag.bag_id}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => {
+                              handleItemChange(index, 'bag_id', bag.bag_id)
+                              setBagSearchTerm('')
+                              setActiveBagSearchIndex(null)
+                              if (deliveryErrors[`items.${index}.bag_id`]) {
+                                setDeliveryErrors({
+                                  ...deliveryErrors,
+                                  [`items.${index}.bag_id`]: '',
+                                })
+                              }
+                            }}
+                          >
+                            {bag.model_name} (Almacén: {bag.warehouse_stock})
+                          </CListGroupItem>
+                        ))}
+                        {filteredBags.length === 0 && (
+                          <CListGroupItem>No se encontraron bolsos con ese nombre</CListGroupItem>
+                        )}
+                      </CListGroup>
+                    )}
                   </div>
                   <div className="w-100">
                     <CFormInput
@@ -1286,6 +1337,8 @@ const Sales = () => {
               setFoundStore(null)
               setDeliveryItems([])
               setDeliveryErrors({})
+              setBagSearchTerm('')
+              setActiveBagSearchIndex(null)
             }}
           >
             Cancelar
